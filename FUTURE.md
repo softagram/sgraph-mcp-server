@@ -4,7 +4,7 @@ Based on successful deployment and real-world testing of the SGraph MCP Server i
 
 ## Current State: Production Ready ✅
 
-As of December 2024, the SGraph MCP Server provides **11 fully functional tools** with excellent performance:
+As of September 2025, the SGraph MCP Server provides **11 fully functional tools** with excellent performance:
 
 - **8 Core Tools**: Model management, element access, dependency analysis
 - **3 Search & Discovery Tools**: Pattern search, type filtering, attribute search  
