@@ -1,13 +1,26 @@
+import asyncio
+import time
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+import os
+import logging
 
 from sgraph_helper import SGraphHelper
+from utils.logging import setup_logging
+
+# Configure logging early
+setup_logging(level=os.getenv("SGRAPH_MCP_LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP("SGraph")
 mcp.settings.port = 8008
 
+# Initialize the helper with proper logging
+print("🔧 Initializing SGraphHelper...")
 sgh = SGraphHelper()
+print("✅ SGraphHelper initialized successfully")
+logger.info("SGraphHelper ready")
 
 
 class SGraphLoadModel(BaseModel):
@@ -17,8 +30,32 @@ class SGraphLoadModel(BaseModel):
 @mcp.tool()
 async def sgraph_load_model(sgraph_load_model: SGraphLoadModel):
     """Load a sgraph from a file and return the model id."""
-    model_id = await sgh.load_sgraph(sgraph_load_model.path)
-    return {"model_id": model_id}
+    try:
+        print(f"🔧 MCP Tool: sgraph_load_model called with path: {sgraph_load_model.path}")
+        logger.info(f"Tool sgraph_load_model start path={sgraph_load_model.path}")
+        # Small settle time to avoid immediate contention when multiple requests arrive
+        await asyncio.sleep(0.1)
+        t0 = time.perf_counter()
+        model_id = await sgh.load_sgraph(sgraph_load_model.path)
+        elapsed = time.perf_counter() - t0
+        print(f"✅ MCP Tool: Model loaded successfully with ID: {model_id}")
+        logger.info(f"Tool sgraph_load_model success id={model_id} elapsed={elapsed:.2f}s")
+        return {"model_id": model_id}
+    except FileNotFoundError as e:
+        error_msg = f"File not found: {str(e)}"
+        print(f"❌ MCP Tool: {error_msg}")
+        logger.error(error_msg)
+        return {"error": error_msg}
+    except TimeoutError as e:
+        error_msg = f"Loading timeout: {str(e)}"
+        print(f"⏰ MCP Tool: {error_msg}")
+        logger.error(error_msg)
+        return {"error": error_msg}
+    except Exception as e:
+        error_msg = f"Loading failed: {str(e)}"
+        print(f"💥 MCP Tool: {error_msg}")
+        logger.exception(error_msg)
+        return {"error": error_msg}
 
 
 class SGraphGetRootElement(BaseModel):
@@ -280,5 +317,41 @@ async def sgraph_get_multiple_elements(
         return {"error": f"Multiple elements retrieval failed: {str(e)}"}
 
 
+class SGraphGetModelOverview(BaseModel):
+    model_id: str
+    max_depth: int = 3
+    include_counts: bool = True
+
+
+@mcp.tool()
+async def sgraph_get_model_overview(
+    sgraph_get_model_overview: SGraphGetModelOverview,
+):
+    """Get hierarchical overview of the model structure up to specified depth."""
+    model = sgh.get_model(sgraph_get_model_overview.model_id)
+    if model is None:
+        return {"error": "Model not loaded"}
+    
+    try:
+        result = sgh.get_model_overview(
+            model,
+            sgraph_get_model_overview.max_depth,
+            sgraph_get_model_overview.include_counts,
+        )
+        return result
+    except Exception as e:
+        return {"error": f"Model overview failed: {str(e)}"}
+
+
+# Note: FastMCP version in use may not support startup/shutdown decorators.
+# We keep startup logging in __main__ before run().
+
 if __name__ == "__main__":
+    print("🚀 Starting MCP server...")
+    print(f"📊 Server will run on http://0.0.0.0:8008")
+    print(f"🛠️  Server initialized with all tools registered")
+    
+    # Add initialization delay before starting
+    time.sleep(1.0)
+    
     mcp.run(transport="sse")
