@@ -20,29 +20,20 @@ mcp.settings.port = 8008
 # Initialize the components
 print("🔧 Initializing modular components...")
 
-# Import all tool modules to register them
-# This imports the tools and they self-register with @mcp.tool() decorators
+# Import tool modules and register them with the MCP server
 from src.tools import model_tools, search_tools, analysis_tools, navigation_tools
+
+# Register all tools with the MCP server
+model_tools.register_tools(mcp)
+search_tools.register_tools(mcp)
+analysis_tools.register_tools(mcp)
+navigation_tools.register_tools(mcp)
 
 print("✅ All tool modules loaded successfully")
 
 
-@mcp.startup()
-async def startup():
-    """Startup handler to ensure proper initialization"""
-    print("🔧 MCP Server starting up...")
-    # Add a small delay to ensure all tools are properly registered
-    await asyncio.sleep(0.5)
-    print("✅ MCP Server startup complete")
-
-
-@mcp.shutdown()
-async def shutdown():
-    """Shutdown handler for cleanup"""
-    print("🔄 MCP Server shutting down...")
-
-
-if __name__ == "__main__":
+def main():
+    """Main entry point for the MCP server."""
     print("🚀 Starting modular MCP server...")
     print(f"📊 Server will run on http://0.0.0.0:8008")
     print(f"🛠️  Modular server initialized with all tools registered")
@@ -51,3 +42,7 @@ if __name__ == "__main__":
     time.sleep(1.0)
     
     mcp.run(transport="sse")
+
+
+if __name__ == "__main__":
+    main()

@@ -9,9 +9,10 @@ import sys
 import os
 
 # Add src to path so we can import the modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from sgraph_helper import SGraphHelper
+from src.core.model_manager import ModelManager
+from src.services.overview_service import OverviewService
 
 async def test_overview_performance():
     """Test the performance of the model overview functionality"""
@@ -19,15 +20,15 @@ async def test_overview_performance():
     print("🔍 Testing sgraph_get_model_overview performance...")
     
     # Initialize helper
-    sgh = SGraphHelper()
+    model_manager = ModelManager()
     
     # Test with the combined model
     model_path = "/opt/softagram/output/projects/sgraph-and-mcp/latest.xml.zip"
     
     try:
         print(f"📁 Loading model from: {model_path}")
-        model_id = await sgh.load_sgraph(model_path)
-        model = sgh.get_model(model_id)
+    model_id = await model_manager.load_model(model_path)
+    model = model_manager.get_model(model_id)
         
         if model is None:
             print("❌ Failed to retrieve model")
@@ -57,7 +58,7 @@ async def test_overview_performance():
             
             # Measure performance
             start_time = time.perf_counter()
-            result = sgh.get_model_overview(model, max_depth=depth, include_counts=True)
+            result = OverviewService.get_model_overview(model, max_depth=depth, include_counts=True)
             end_time = time.perf_counter()
             
             duration_ms = (end_time - start_time) * 1000

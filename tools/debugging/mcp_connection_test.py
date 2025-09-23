@@ -185,7 +185,7 @@ async def run_connection_diagnostics(server_url: str = "http://localhost:8008/ss
         print("\n🔧 TROUBLESHOOTING SUGGESTIONS:")
         
         if not diagnostics["server_port"]["status"]:
-            print("• Start the server: uv run src/server.py")
+            print("• Start the server: uv run src/server_modular.py")
             
         if not diagnostics["nodejs_version"]["status"]:
             print("• Install Node.js v20+: https://nodejs.org/")

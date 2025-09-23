@@ -11,26 +11,27 @@ import os
 import json
 
 # Add src to path so we can import the modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from sgraph_helper import SGraphHelper
-from server import sgraph_get_model_overview, SGraphGetModelOverview
+from src.core.model_manager import ModelManager
+from src.services.overview_service import OverviewService
+from src.tools.model_tools import SGraphGetModelOverview
 
 async def test_helper_performance():
-    """Test the direct helper function performance"""
+    """Test the direct service function performance"""
     
-    print("🔍 Testing SGraphHelper.get_model_overview performance...")
+    print("🔍 Testing OverviewService.get_model_overview performance...")
     
-    # Initialize helper
-    sgh = SGraphHelper()
+    # Initialize model manager
+    model_manager = ModelManager()
     
     # Test with the combined model
     model_path = "/opt/softagram/output/projects/sgraph-and-mcp/latest.xml.zip"
     
     try:
         print(f"📁 Loading model from: {model_path}")
-        model_id = await sgh.load_sgraph(model_path)
-        model = sgh.get_model(model_id)
+        model_id = await model_manager.load_model(model_path)
+        model = model_manager.get_model(model_id)
         
         if model is None:
             print("❌ Failed to retrieve model")
@@ -58,13 +59,13 @@ async def test_helper_performance():
             print(f"\n📊 Testing depth {depth} - {description} (target: <{target_ms}ms)")
             
             # Warm up call
-            sgh.get_model_overview(model, max_depth=depth, include_counts=True)
+            OverviewService.get_model_overview(model, max_depth=depth, include_counts=True)
             
             # Multiple runs for accurate measurement
             times = []
             for i in range(5):
                 start_time = time.perf_counter()
-                result = sgh.get_model_overview(model, max_depth=depth, include_counts=True)
+                result = OverviewService.get_model_overview(model, max_depth=depth, include_counts=True)
                 end_time = time.perf_counter()
                 times.append((end_time - start_time) * 1000)
             
@@ -108,15 +109,16 @@ async def test_helper_performance():
         traceback.print_exc()
         return False, []
 
-async def test_mcp_tool_performance():
-    """Test the MCP tool call performance"""
+async def test_service_performance():
+    """Test the service call performance"""
     
-    print("\n🔧 Testing MCP tool call performance...")
+    print("\n🔧 Testing service call performance...")
     
-    # Initialize helper and load model
-    sgh = SGraphHelper()
+    # Initialize model manager and load model
+    model_manager = ModelManager()
     model_path = "/opt/softagram/output/projects/sgraph-and-mcp/latest.xml.zip"
-    model_id = await sgh.load_sgraph(model_path)
+    model_id = await model_manager.load_model(model_path)
+    model = model_manager.get_model(model_id)
     
     # Test MCP tool performance
     test_cases = [
@@ -131,37 +133,30 @@ async def test_mcp_tool_performance():
         depth = test_case["depth"]
         target_ms = test_case["target_ms"]
         
-        print(f"\n🛠️  Testing MCP tool depth {depth} (target: <{target_ms}ms)")
-        
-        # Create MCP request object
-        request = SGraphGetModelOverview(
-            model_id=model_id,
-            max_depth=depth,
-            include_counts=True
-        )
+        print(f"\n🛠️  Testing service depth {depth} (target: <{target_ms}ms)")
         
         # Warm up
-        await sgraph_get_model_overview(request)
+        OverviewService.get_model_overview(model, max_depth=depth, include_counts=True)
         
         # Multiple runs
         times = []
         for i in range(5):
             start_time = time.perf_counter()
-            result = await sgraph_get_model_overview(request)
+            result = OverviewService.get_model_overview(model, max_depth=depth, include_counts=True)
             end_time = time.perf_counter()
             times.append((end_time - start_time) * 1000)
         
         avg_ms = sum(times) / len(times)
         
-        # Validate MCP response structure
-        if 'error' in result:
-            print(f"  ❌ MCP tool returned error: {result['error']}")
+        # Validate response structure
+        if not result or 'summary' not in result:
+            print(f"  ❌ Service returned invalid result")
             all_passed = False
             continue
         
         elements_count = result['summary']['total_elements']
         
-        print(f"  ⏱️  Avg MCP call: {avg_ms:.1f}ms")
+        print(f"  ⏱️  Avg service call: {avg_ms:.1f}ms")
         print(f"  📊 Elements returned: {elements_count}")
         
         if avg_ms <= target_ms:
@@ -177,10 +172,10 @@ async def test_scalability():
     
     print("\n📏 Testing scalability characteristics...")
     
-    sgh = SGraphHelper()
+    model_manager = ModelManager()
     model_path = "/opt/softagram/output/projects/sgraph-and-mcp/latest.xml.zip"
-    model_id = await sgh.load_sgraph(model_path)
-    model = sgh.get_model(model_id)
+    model_id = await model_manager.load_model(model_path)
+    model = model_manager.get_model(model_id)
     
     # Test scaling with depth
     print("  🔍 Analyzing performance scaling with depth...")
@@ -188,7 +183,7 @@ async def test_scalability():
     scaling_results = []
     for depth in range(1, 8):
         start_time = time.perf_counter()
-        result = sgh.get_model_overview(model, max_depth=depth, include_counts=False)
+        result = OverviewService.get_model_overview(model, max_depth=depth, include_counts=False)
         end_time = time.perf_counter()
         
         duration_ms = (end_time - start_time) * 1000
@@ -226,8 +221,8 @@ async def main():
     # Test helper performance
     helper_passed, helper_results = await test_helper_performance()
     
-    # Test MCP tool performance
-    mcp_passed = await test_mcp_tool_performance()
+    # Test service performance
+    service_passed = await test_service_performance()
     
     # Test scalability
     scale_passed = await test_scalability()
@@ -243,10 +238,10 @@ async def main():
             status_icon = "✅" if result["status"] == "PASS" else "❌"
             print(f"  {status_icon} Depth {result['depth']}: {result['avg_ms']:.1f}ms ({result['elements']} elements)")
     
-    print(f"\n🛠️  MCP Tool Performance: {'✅ PASSED' if mcp_passed else '❌ FAILED'}")
+    print(f"\n🛠️  Service Performance: {'✅ PASSED' if service_passed else '❌ FAILED'}")
     print(f"📏 Scalability Test: {'✅ PASSED' if scale_passed else '❌ FAILED'}")
     
-    overall_success = helper_passed and mcp_passed and scale_passed
+    overall_success = helper_passed and service_passed and scale_passed
     
     if overall_success:
         print("\n🎉 ALL PERFORMANCE TESTS PASSED!")

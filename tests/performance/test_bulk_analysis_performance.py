@@ -13,18 +13,19 @@ import sys
 import time
 from pathlib import Path
 
-# Add src directory to path to import our modules
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add project root to path to import our modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sgraph_helper import SGraphHelper
+from src.core.model_manager import ModelManager
+from src.services.dependency_service import DependencyService
 
 
 async def test_bulk_analysis_performance():
     """Test the performance of bulk analysis functions."""
     print("=== Bulk Analysis Performance Test ===")
     
-    # Initialize helper
-    helper = SGraphHelper()
+    # Initialize model manager
+    model_manager = ModelManager()
     
     # Path to the test model
     model_path = Path(__file__).parent.parent / "sgraph-example-models" / "langchain.xml.zip"
@@ -38,7 +39,7 @@ async def test_bulk_analysis_performance():
     # Load the model and measure loading time
     load_start = time.perf_counter()
     try:
-        model_id = await helper.load_sgraph(str(model_path))
+        model_id = await model_manager.load_model(str(model_path))
         load_end = time.perf_counter()
         load_duration = (load_end - load_start) * 1000  # Convert to milliseconds
         print(f"⏱️  Model loaded in: {load_duration:.2f} ms")
@@ -47,7 +48,7 @@ async def test_bulk_analysis_performance():
         return False
     
     # Get the model for direct access
-    model = helper.get_model(model_id)
+    model = model_manager.get_model(model_id)
     if model is None:
         print("❌ Failed to retrieve loaded model")
         return False
@@ -66,7 +67,7 @@ async def test_bulk_analysis_performance():
     
     search_start = time.perf_counter()
     try:
-        result = helper.get_subtree_dependencies(
+        result = DependencyService.get_subtree_dependencies(
             model=model,
             root_path=subtree_path,
             include_external=True,
@@ -105,7 +106,7 @@ async def test_bulk_analysis_performance():
     
     search_start = time.perf_counter()
     try:
-        result = helper.get_dependency_chain(
+        result = DependencyService.get_dependency_chain(
             model=model,
             element_path=chain_element_path,
             direction="outgoing",
@@ -154,7 +155,7 @@ async def test_bulk_analysis_performance():
     
     search_start = time.perf_counter()
     try:
-        result = helper.get_multiple_elements(
+        result = DependencyService.get_multiple_elements(
             model=model,
             element_paths=element_paths,
             additional_fields=[]
