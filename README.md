@@ -18,11 +18,30 @@ Traditional AI agents make dozens or hundreds of tool calls when analyzing codeb
 
 ## Architecture
 
+The sgraph-mcp-server uses a **modular architecture** designed for maintainability, testability, and extensibility:
+
 ### Components
 
-1. **SGraphHelper** - Manages loaded sgraph models in memory with unique IDs
-2. **ModelLoader** - Asynchronously loads sgraph models from files
-3. **MCP Tools** - RESTful interface for querying cached models
+1. **Core Layer** (`src/core/`)
+   - **ModelManager** - Model loading, caching, and lifecycle management  
+   - **ElementConverter** - SElement to dictionary conversion utilities
+
+2. **Service Layer** (`src/services/`)
+   - **SearchService** - Search algorithms (by name, type, attributes)
+   - **DependencyService** - Dependency analysis and subtree operations
+   - **OverviewService** - Model structure overview generation
+
+3. **Tools Layer** (`src/tools/`)
+   - **ModelTools** - Model loading and overview MCP tools
+   - **SearchTools** - Search-related MCP tools  
+   - **AnalysisTools** - Dependency analysis MCP tools
+   - **NavigationTools** - Element navigation MCP tools
+
+4. **Utils Layer** (`src/utils/`)
+   - **Logging** - Centralized logging configuration
+   - **Validators** - Input validation and security checks
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
 ### Current MCP Tools
 
@@ -42,6 +61,7 @@ Traditional AI agents make dozens or hundreds of tool calls when analyzing codeb
 - `sgraph_get_subtree_dependencies` - Analyze all dependencies within a subtree (internal, incoming, outgoing)
 - `sgraph_get_dependency_chain` - Get transitive dependency chains with configurable direction and depth
 - `sgraph_get_multiple_elements` - Efficiently retrieve multiple elements in a single request
+- `sgraph_get_model_overview` - Get hierarchical overview of model structure with configurable depth
 
 #### Search Examples
 
@@ -87,6 +107,13 @@ sgraph_get_multiple_elements(
         "/project/src/database/user.py/User"
     ]
 )
+
+# Get hierarchical overview of the model structure
+sgraph_get_model_overview(
+    model_id="abc123",
+    max_depth=3,
+    include_counts=True
+)
 ```
 
 ## SGraph Data Structure
@@ -131,19 +158,36 @@ uv sync
 
 ## Testing
 
-### Performance Tests
+The project includes comprehensive tests organized by type:
 
-Run performance tests to verify search operations meet performance requirements:
-
+### Run All Tests
 ```bash
-# Run all performance tests
-uv run python performance_tests/run_tests.py
+# Run all tests (unit, integration, performance)
+uv run python tests/run_all_tests.py
 
-# Run specific test
-uv run python performance_tests/test_search_performance.py
+# Run specific test types
+uv run python tests/run_all_tests.py unit
+uv run python tests/run_all_tests.py integration  
+uv run python tests/run_all_tests.py performance
 ```
 
-The performance tests use the `langchain.xml.zip` model to verify that search operations complete within acceptable time limits (e.g., < 100ms for name searches).
+### Test Structure
+- **Unit Tests** (`tests/unit/`) - Test individual components in isolation
+- **Integration Tests** (`tests/integration/`) - Test component interactions and workflows  
+- **Performance Tests** (`tests/performance/`) - Validate performance targets and regressions
+
+### Legacy Performance Tests
+The original performance tests verify that search operations meet performance requirements:
+
+```bash
+# Run original performance test suite
+uv run python tests/performance/run_tests.py
+
+# Run specific legacy test
+uv run python tests/performance/test_search_performance.py
+```
+
+Performance tests use real models to verify operations complete within acceptable time limits (e.g., < 100ms for name searches).
 
 ## Usage
 

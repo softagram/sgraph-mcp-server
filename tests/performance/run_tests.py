@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_search_performance import test_search_performance
 from test_all_search_performance import test_all_search_functions_performance
 from test_bulk_analysis_performance import test_bulk_analysis_performance
+from test_model_overview_performance import main as test_model_overview_performance
 
 
 async def main():
@@ -24,6 +25,7 @@ async def main():
         ("Search Elements by Name", test_search_performance),
         ("All Search Functions Comprehensive", test_all_search_functions_performance),
         ("Bulk Analysis Functions", test_bulk_analysis_performance),
+        ("Model Overview Performance", test_model_overview_performance),
     ]
     
     passed = 0

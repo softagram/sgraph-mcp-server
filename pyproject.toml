@@ -10,3 +10,10 @@ dependencies = [
     "pydantic>=2.11.4",
     "sgraph>=1.1.1",
 ]
+
+[project.scripts]
+sgraph-mcp-server = "src.server_modular:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
