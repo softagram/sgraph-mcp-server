@@ -11,3 +11,7 @@ wheels/
 
 # SGraph files
 *.xml
+
+# MkDocs local build output and cache
+site/
+.cache/

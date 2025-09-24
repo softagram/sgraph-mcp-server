@@ -20,8 +20,6 @@ As of September 2025, the SGraph MCP Server provides **11 fully functional tools
 
 **Recommended Tools**:
 ```python
-# Analyze third-party library usage patterns
-sgraph_analyze_external_usage(model_id, scope_path?, grouping="library|namespace|type")
 
 # Security and vulnerability analysis for external dependencies
 sgraph_get_external_security_info(model_id, external_library_filter?)
@@ -32,6 +30,13 @@ sgraph_analyze_external_licenses(model_id, scope_path?)
 # API surface analysis for external libraries
 sgraph_get_external_api_usage(model_id, library_name, usage_type="import|call|inherit")
 ```
+
+Already implemented in Phase 1:
+
+- `sgraph_analyze_external_usage(model_id, scope_path?)` — Aggregates usage of External dependencies.
+  - Output: totals, per-language and per-package breakdowns, and detailed targets with example internal sources.
+  - Scope: Optional `scope_path` limits analysis to a repository or subtree (e.g. `/sgraph-and-mcp/sgraph-mcp-server`).
+  - Use cases: auditing third-party usage, scoping modernization work, impact analysis for dependency upgrades.
 
 ### 2. Intelligent Code Quality & Architecture Analysis
 
