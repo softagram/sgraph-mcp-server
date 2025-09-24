@@ -17,3 +17,9 @@ sgraph-mcp-server = "src.server_modular:main"
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.2.0",
+    "pytest>=8.4.2",
+]
