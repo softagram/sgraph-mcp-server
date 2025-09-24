@@ -31,6 +31,11 @@ class SGraphGetMultipleElements(BaseModel):
     additional_fields: List[str] = []
 
 
+class SGraphAnalyzeExternalUsage(BaseModel):
+    model_id: str
+    scope_path: Optional[str] = None
+
+
 def register_tools(mcp):
     """Register analysis tools with the MCP server."""
     
@@ -99,3 +104,22 @@ def register_tools(mcp):
             return result
         except Exception as e:
             return {"error": f"Multiple elements retrieval failed: {str(e)}"}
+
+    @mcp.tool()
+    async def sgraph_analyze_external_usage(
+        sgraph_analyze_external_usage: SGraphAnalyzeExternalUsage,
+    ):
+        """Analyze usage of External dependencies. Optionally restrict by scope_path (e.g., repository path)."""
+        model_manager = get_model_manager()
+        model = model_manager.get_model(sgraph_analyze_external_usage.model_id)
+        if model is None:
+            return {"error": "Model not loaded"}
+        
+        try:
+            result = DependencyService.analyze_external_usage(
+                model,
+                sgraph_analyze_external_usage.scope_path,
+            )
+            return result
+        except Exception as e:
+            return {"error": f"External usage analysis failed: {str(e)}"}

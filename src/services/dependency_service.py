@@ -180,7 +180,7 @@ class DependencyService:
     def get_multiple_elements(
         model: SGraph,
         element_paths: List[str],
-        additional_fields: List[str] = None,
+        additional_fields: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Get information for multiple elements efficiently."""
         if additional_fields is None:
@@ -206,4 +206,137 @@ class DependencyService:
         
         logger.debug(f"Multiple elements retrieved: {result['found_count']}/{result['requested_count']} found")
         
+        return result
+
+    @staticmethod
+    def analyze_external_usage(
+        model: SGraph,
+        scope_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Analyze usage of External dependencies within an optional scope.
+        
+        - Detect the project's `External` subtree under the single named root.
+        - Scan outgoing associations from elements in scope to External elements.
+        - Aggregate by language (first child under External) and package (second child).
+        """
+        # Resolve project root (single named child of unnamed root)
+        unnamed_root = model.rootNode
+        project_root = None
+        for child in unnamed_root.children:
+            # Choose first child that has a non-empty name
+            if getattr(child, "name", None):
+                project_root = child
+                break
+        if project_root is None:
+            logger.warning("Project root not found under unnamed root")
+            return {"error": "Project root not found"}
+        project_root_path = project_root.getPath()
+
+        # Find External subtree
+        external_root = None
+        for child in project_root.children:
+            if (child.name or "") == "External":
+                external_root = child
+                break
+        if external_root is None:
+            logger.info("External subtree not present in this model")
+            return {
+                "project_root": project_root_path,
+                "external_root": None,
+                "totals": {
+                    "scanned_internal_elements": 0,
+                    "external_edge_count": 0,
+                    "unique_external_targets": 0,
+                },
+                "by_language": {},
+                "by_package": {},
+                "details": [],
+            }
+
+        external_root_path = external_root.getPath()
+
+        # Build scope set
+        scope_elements: Set[SElement] = set()
+        if scope_path:
+            scope_elem = model.findElementFromPath(scope_path)
+            if scope_elem is None:
+                logger.warning(f"Scope path not found: {scope_path}")
+                return {"error": f"Scope not found: {scope_path}"}
+            stack: List[SElement] = [scope_elem]
+            while stack:
+                e = stack.pop()
+                scope_elements.add(e)
+                stack.extend(e.children)
+        else:
+            # Default: whole project except External tree
+            stack = [project_root]
+            while stack:
+                e = stack.pop()
+                # Skip external subtree entirely
+                if e is external_root:
+                    continue
+                scope_elements.add(e)
+                stack.extend(e.children)
+
+        # Aggregate external usage
+        by_language: Dict[str, Dict[str, int]] = {}
+        by_package: Dict[str, Dict[str, int]] = {}
+        details_map: Dict[str, Dict[str, Any]] = {}
+        external_edge_count = 0
+
+        ext_prefix = external_root_path + "/"
+
+        for elem in scope_elements:
+            for assoc in elem.outgoing:
+                target = assoc.toElement
+                tpath = target.getPath()
+                if not tpath.startswith(ext_prefix):
+                    continue
+                external_edge_count += 1
+
+                # Derive language and package based on path segments after External/
+                rel = tpath[len(ext_prefix):]  # e.g., Python/pandas/...
+                parts = [p for p in rel.split("/") if p]
+                language = parts[0] if len(parts) >= 1 else "unknown"
+                package = parts[1] if len(parts) >= 2 else (parts[0] if parts else "unknown")
+
+                lang_stats = by_language.setdefault(language, {"unique_targets": 0, "edge_count": 0})
+                pkg_stats = by_package.setdefault(package, {"unique_targets": 0, "edge_count": 0})
+                lang_stats["edge_count"] += 1
+                pkg_stats["edge_count"] += 1
+
+                # Track unique targets and examples per target path
+                d = details_map.get(tpath)
+                if d is None:
+                    d = {
+                        "target_path": tpath,
+                        "language": language,
+                        "package": package,
+                        "edge_count": 0,
+                        "example_sources": [],
+                    }
+                    details_map[tpath] = d
+                    # New unique target increments language/package unique_targets
+                    lang_stats["unique_targets"] += 1
+                    pkg_stats["unique_targets"] += 1
+                d["edge_count"] += 1
+                if len(d["example_sources"]) < 3:
+                    d["example_sources"].append(elem.getPath())
+
+        details = sorted(details_map.values(), key=lambda x: (-x["edge_count"], x["target_path"]))
+
+        result = {
+            "project_root": project_root_path,
+            "external_root": external_root_path,
+            "scope_path": scope_path,
+            "totals": {
+                "scanned_internal_elements": len(scope_elements),
+                "external_edge_count": external_edge_count,
+                "unique_external_targets": len(details),
+            },
+            "by_language": by_language,
+            "by_package": by_package,
+            "details": details,
+        }
+
         return result
