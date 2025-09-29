@@ -23,7 +23,7 @@ class TestEndToEnd:
     def setup_method(self):
         """Set up test fixtures."""
         self.manager = ModelManager()
-        self.model_path = "/opt/softagram/output/projects/sgraph-and-mcp/latest.xml.zip"
+        self.model_path = "tests/sgraph-and-mcp.xml.zip"
     
     @pytest.mark.asyncio
     async def test_full_workflow(self):
