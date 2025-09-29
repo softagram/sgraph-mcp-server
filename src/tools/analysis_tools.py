@@ -36,6 +36,15 @@ class SGraphAnalyzeExternalUsage(BaseModel):
     scope_path: Optional[str] = None
 
 
+class SGraphGetHighLevelDependencies(BaseModel):
+    model_id: str
+    scope_path: Optional[str] = None
+    aggregation_level: int = 2  # Directory depth for aggregation (2 = /Project/module level)
+    min_dependency_count: int = 1  # Minimum dependencies to include in results
+    include_external: bool = True
+    include_metrics: bool = True
+
+
 def register_tools(mcp):
     """Register analysis tools with the MCP server."""
     
@@ -123,3 +132,31 @@ def register_tools(mcp):
             return result
         except Exception as e:
             return {"error": f"External usage analysis failed: {str(e)}"}
+
+    @mcp.tool()
+    async def sgraph_get_high_level_dependencies(
+        sgraph_get_high_level_dependencies: SGraphGetHighLevelDependencies,
+    ):
+        """Get high-level module dependencies aggregated at directory level. 
+        
+        This provides an architectural overview showing dependencies between modules/directories 
+        rather than individual functions/classes. Useful for understanding overall system structure,
+        identifying tightly coupled modules, and architectural analysis.
+        """
+        model_manager = get_model_manager()
+        model = model_manager.get_model(sgraph_get_high_level_dependencies.model_id)
+        if model is None:
+            return {"error": "Model not loaded"}
+        
+        try:
+            result = DependencyService.get_high_level_dependencies(
+                model,
+                sgraph_get_high_level_dependencies.scope_path,
+                sgraph_get_high_level_dependencies.aggregation_level,
+                sgraph_get_high_level_dependencies.min_dependency_count,
+                sgraph_get_high_level_dependencies.include_external,
+                sgraph_get_high_level_dependencies.include_metrics,
+            )
+            return result
+        except Exception as e:
+            return {"error": f"High-level dependency analysis failed: {str(e)}"}

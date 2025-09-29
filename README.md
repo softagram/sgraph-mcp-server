@@ -62,6 +62,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 - `sgraph_get_dependency_chain` - Get transitive dependency chains with configurable direction and depth
 - `sgraph_get_multiple_elements` - Efficiently retrieve multiple elements in a single request
 - `sgraph_get_model_overview` - Get hierarchical overview of model structure with configurable depth
+- `sgraph_get_high_level_dependencies` - Get module-level dependencies aggregated at directory level with metrics
 
 #### Search Examples
 
@@ -113,6 +114,16 @@ sgraph_get_model_overview(
     model_id="abc123",
     max_depth=3,
     include_counts=True
+)
+
+# Get high-level module dependencies with metrics
+sgraph_get_high_level_dependencies(
+    model_id="abc123",
+    scope_path="/project/src",  # Optional: limit to src directory
+    aggregation_level=2,        # Aggregate at /project/module level
+    min_dependency_count=3,     # Only show dependencies with 3+ connections
+    include_external=True,      # Include external dependencies
+    include_metrics=True        # Calculate coupling metrics and hotspots
 )
 ```
 
