@@ -194,7 +194,7 @@ Performance tests use real models to verify operations complete within acceptabl
 ### Run the server
 
 ```bash
-uv run src/server.py
+uv run python -m src.server
 ```
 
 ### MCP client configuration
