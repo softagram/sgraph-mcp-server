@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sgraph-mcp-server = "src.server_modular:main"
+sgraph-mcp-server = "src.server:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
