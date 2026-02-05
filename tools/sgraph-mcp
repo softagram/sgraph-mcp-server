@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+# sgraph-mcp: Start the sgraph MCP server
+#
+# Usage:
+#   sgraph-mcp                    # Start with claude-code profile (default)
+#   sgraph-mcp --profile legacy   # Start with legacy profile
+#
+
+SGRAPH_DIR="${SGRAPH_MCP_DIR:-$HOME/code/sgraph-mcp-server}"
+PROFILE="${1:-claude-code}"
+
+# Handle --profile flag
+if [ "$1" = "--profile" ]; then
+    PROFILE="$2"
+fi
+
+cd "$SGRAPH_DIR" && exec uv run python -m src.server --profile "$PROFILE"
