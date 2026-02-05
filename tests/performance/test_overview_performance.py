@@ -27,8 +27,8 @@ async def test_overview_performance():
     
     try:
         print(f"📁 Loading model from: {model_path}")
-    model_id = await model_manager.load_model(model_path)
-    model = model_manager.get_model(model_id)
+        model_id = await model_manager.load_model(model_path)
+        model = model_manager.get_model(model_id)
         
         if model is None:
             print("❌ Failed to retrieve model")

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sgraph": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8008/sse"]
+    }
+  }
+}

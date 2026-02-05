@@ -138,6 +138,40 @@ sgraph_describe_element(model_id, element_path, description_type="purpose|usage|
 - **Export Capabilities**: Export analysis results in various formats (JSON, GraphML, etc.)
 - **Custom Attributes**: Support for user-defined element and association attributes
 
+## IDE-Specific Profiles (Deferred)
+
+### Cursor IDE Profile
+
+**Rationale**: Cursor has different context management than Claude Code - may benefit from different tool consolidation or output formats.
+
+**Considerations**:
+- Cursor's inline editing may prefer shorter, more targeted responses
+- Different context window behavior
+- May need different pagination strategies
+
+**Status**: Deferred until we measure actual benefit of Claude Code profile in real workflows.
+
+### Gemini CLI Profile
+
+**Rationale**: Gemini has larger context window (1M+ tokens) - different optimization strategy.
+
+**Considerations**:
+- Larger context = less need for aggressive consolidation
+- May benefit from more detailed outputs
+- Different tool discovery patterns
+
+**Status**: Deferred until Gemini CLI MCP support matures.
+
+### Measurement Plan
+
+Before implementing IDE-specific profiles, measure:
+1. Token consumption difference with claude-code profile vs legacy
+2. Query accuracy (does consolidated data lead to better decisions?)
+3. Round-trip reduction (fewer tool calls to achieve same understanding?)
+4. User satisfaction in real development workflows
+
+---
+
 ## Implementation Roadmap
 
 ### Phase 1: Advanced Analysis
