@@ -202,10 +202,26 @@ Performance tests use real models to verify operations complete within acceptabl
 
 ## Usage
 
+### Profiles
+
+The server supports multiple profiles optimized for different use cases:
+
+| Profile | Tools | Use Case |
+|---------|-------|----------|
+| `legacy` | 14 | Full tool set (backwards compatible, default) |
+| `claude-code` | 5 | AI-assisted software development (optimized for Claude Code) |
+
 ### Run the server
 
 ```bash
+# Default (legacy profile with all 14 tools)
 uv run python -m src.server
+
+# Claude Code optimized (5 consolidated tools, 60% fewer tokens)
+uv run python -m src.server --profile claude-code
+
+# Explicit legacy
+uv run python -m src.server --profile legacy
 ```
 
 ### MCP client configuration
@@ -220,6 +236,24 @@ uv run python -m src.server
   }
 }
 ```
+
+For Claude Code or Cursor, you can also use a `.mcp.json` file in your project root:
+
+```json
+{
+  "mcpServers": {
+    "sgraph": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8008/sse"]
+    }
+  }
+}
+```
+
+### Profile Documentation
+
+- **Claude Code**: See [SGRAPH_FOR_CLAUDE_CODE.md](SGRAPH_FOR_CLAUDE_CODE.md) for tool reference and workflows
+- **Genealogy**: See [SGRAPH_FOR_GENEALOGY.md](SGRAPH_FOR_GENEALOGY.md) for family tree navigation guide
 
 ## About SGraph
 
