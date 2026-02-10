@@ -12,7 +12,7 @@ Usage:
 """
 
 import argparse
-import time
+import sys
 from mcp.server.fastmcp import FastMCP
 
 from src.utils.logging import setup_logging
@@ -48,39 +48,50 @@ Examples:
         default=8008,
         help="Port to run the server on (default: 8008)",
     )
+    parser.add_argument(
+        "--transport",
+        "-t",
+        type=str,
+        default="sse",
+        choices=["sse", "stdio"],
+        help="Transport to use (default: sse)",
+    )
     return parser.parse_args()
 
 
 def main():
     """Main entry point for the MCP server."""
-    # Set up logging
-    setup_logging()
-
     # Parse arguments
     args = parse_args()
+
+    # For stdio transport, redirect all output to stderr to avoid corrupting JSON-RPC
+    log = sys.stderr if args.transport == "stdio" else sys.stdout
+
+    # Set up logging (must use stderr for stdio transport)
+    setup_logging(stream=log)
 
     # Create MCP server
     mcp = FastMCP("SGraph")
     mcp.settings.port = args.port
 
     # Load and register the selected profile
-    print(f"🔧 Loading profile: {args.profile}")
+    print(f"🔧 Loading profile: {args.profile}", file=log)
     try:
         profile = get_profile(args.profile)
         profile.register_tools(mcp)
-        print(f"✅ Profile '{args.profile}' loaded: {profile.description}")
+        print(f"✅ Profile '{args.profile}' loaded: {profile.description}", file=log)
     except ValueError as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error: {e}", file=log)
         return 1
 
     # Start the server
-    print(f"🚀 Starting MCP server on http://0.0.0.0:{args.port}")
-    print(f"📊 Profile: {args.profile}")
+    if args.transport == "sse":
+        print(f"🚀 Starting MCP server on http://0.0.0.0:{args.port}", file=log)
+    else:
+        print(f"🚀 Starting MCP server with {args.transport} transport", file=log, flush=True)
+    print(f"📊 Profile: {args.profile}", file=log, flush=True)
 
-    # Add initialization delay before starting
-    time.sleep(1.0)
-
-    mcp.run(transport="sse")
+    mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":
