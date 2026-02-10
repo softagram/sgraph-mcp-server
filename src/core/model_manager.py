@@ -46,7 +46,7 @@ class ModelManager:
             # Use asyncio.to_thread with timeout to prevent hanging
             model = await asyncio.wait_for(
                 asyncio.to_thread(self._loader.load_model, path),
-                timeout=60.0  # 60 second timeout
+                timeout=300.0  # 5 minute timeout for large models
             )
             
             load_time = time.perf_counter() - start_time

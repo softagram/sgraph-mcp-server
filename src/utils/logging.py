@@ -7,20 +7,23 @@ import sys
 from typing import Optional
 
 
-def setup_logging(level: str = "INFO", format_string: Optional[str] = None) -> None:
+def setup_logging(level: str = "INFO", format_string: Optional[str] = None, stream=None) -> None:
     """Set up centralized logging configuration."""
-    
+
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    
+
+    if stream is None:
+        stream = sys.stdout
+
     # Convert string level to logging constant
     numeric_level = getattr(logging, level.upper(), logging.INFO)
-    
+
     # Configure root logger
     logging.basicConfig(
         level=numeric_level,
         format=format_string,
-        handlers=[logging.StreamHandler(sys.stdout)]
+        handlers=[logging.StreamHandler(stream)]
     )
     
     # Set specific loggers
