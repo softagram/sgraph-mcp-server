@@ -43,7 +43,28 @@ The sgraph-mcp-server uses a **modular architecture** designed for maintainabili
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
-### Current MCP Tools
+### MCP Tools by Profile
+
+#### Claude Code Profile (5 tools, plain text output)
+
+All Claude Code tools return **plain text using TOON line notation** instead of JSON, minimizing token usage.
+
+| Tool | Purpose | Output Format |
+|------|---------|---------------|
+| `sgraph_load_model` | Load and cache a model | JSON (metadata only) |
+| `sgraph_search_elements` | Find elements by name pattern | `N/M matches` + `/path [type] name` lines |
+| `sgraph_get_element_dependencies` | Query incoming/outgoing deps | `-> /target (type)` or `/source (type) ->` |
+| `sgraph_get_element_structure` | Explore hierarchy without reading source | Indented `/path [type] name` tree |
+| `sgraph_analyze_change_impact` | Multi-level impact analysis | Summary + paths grouped by aggregation level |
+
+Key features:
+- **`include_descendants`** on dependencies: shows which child element owns each dependency using relative paths (no leading `/`)
+- **`result_level`** aggregation: same data at function/file/directory/repository granularity
+- **`scope_path`** filtering: limit searches to subtrees, with configurable default scope
+
+See [SGRAPH_FOR_CLAUDE_CODE.md](SGRAPH_FOR_CLAUDE_CODE.md) for full tool reference, output examples, and workflows.
+
+#### Legacy Profile (14 tools, JSON output)
 
 **Basic Operations:**
 - `sgraph_load_model` - Load and cache an sgraph model from file
@@ -63,69 +84,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 - `sgraph_get_multiple_elements` - Efficiently retrieve multiple elements in a single request
 - `sgraph_get_model_overview` - Get hierarchical overview of model structure with configurable depth
 - `sgraph_get_high_level_dependencies` - Get module-level dependencies aggregated at directory level with metrics
-
-#### Search Examples
-
-```python
-# Find all functions containing "test" in their name
-sgraph_search_elements_by_name(model_id="abc123", pattern=".*test.*", element_type="function")
-
-# Get all classes in a specific directory
-sgraph_get_elements_by_type(model_id="abc123", element_type="class", scope_path="/project/src/models")
-
-# Find elements with specific attributes
-sgraph_search_elements_by_attributes(
-    model_id="abc123", 
-    attribute_filters={"visibility": "public", "complexity": "high"}
-)
-```
-
-#### Bulk Analysis Examples
-
-```python
-# Analyze dependencies within a module subtree
-sgraph_get_subtree_dependencies(
-    model_id="abc123", 
-    root_path="/project/src/auth",
-    include_external=True,
-    max_depth=3
-)
-
-# Get transitive dependency chain from an element
-sgraph_get_dependency_chain(
-    model_id="abc123",
-    element_path="/project/src/auth/login.py/LoginHandler",
-    direction="outgoing",
-    max_depth=2
-)
-
-# Efficiently retrieve multiple elements
-sgraph_get_multiple_elements(
-    model_id="abc123",
-    element_paths=[
-        "/project/src/auth/login.py/LoginHandler",
-        "/project/src/auth/session.py/SessionManager",
-        "/project/src/database/user.py/User"
-    ]
-)
-
-# Get hierarchical overview of the model structure
-sgraph_get_model_overview(
-    model_id="abc123",
-    max_depth=3,
-    include_counts=True
-)
-
-# Get high-level module dependencies with metrics
-sgraph_get_high_level_dependencies(
-    model_id="abc123",
-    scope_path="/project/src",  # Optional: limit to src directory
-    aggregation_level=2,        # Aggregate at /project/module level
-    min_dependency_count=3,     # Only show dependencies with 3+ connections
-    include_external=True,      # Include external dependencies
-    include_metrics=True        # Calculate coupling metrics and hotspots
-)
-```
 
 ## SGraph Data Structure
 
@@ -206,10 +164,10 @@ Performance tests use real models to verify operations complete within acceptabl
 
 The server supports multiple profiles optimized for different use cases:
 
-| Profile | Tools | Use Case |
-|---------|-------|----------|
-| `legacy` | 14 | Full tool set (backwards compatible, default) |
-| `claude-code` | 5 | AI-assisted software development (optimized for Claude Code) |
+| Profile | Tools | Output | Use Case |
+|---------|-------|--------|----------|
+| `legacy` | 14 | JSON | Full tool set (backwards compatible, default) |
+| `claude-code` | 5 | Plain text (TOON) | AI-assisted development (token-optimized) |
 
 ### Run the server
 
@@ -217,7 +175,7 @@ The server supports multiple profiles optimized for different use cases:
 # Default (legacy profile with all 14 tools)
 uv run python -m src.server
 
-# Claude Code optimized (5 consolidated tools, 60% fewer tokens)
+# Claude Code optimized (5 tools, plain text TOON output)
 uv run python -m src.server --profile claude-code
 
 # Explicit legacy
@@ -252,8 +210,7 @@ For Claude Code or Cursor, you can also use a `.mcp.json` file in your project r
 
 ### Profile Documentation
 
-- **Claude Code**: See [SGRAPH_FOR_CLAUDE_CODE.md](SGRAPH_FOR_CLAUDE_CODE.md) for tool reference and workflows
-- **Genealogy**: See [SGRAPH_FOR_GENEALOGY.md](SGRAPH_FOR_GENEALOGY.md) for family tree navigation guide
+- **Claude Code**: See [SGRAPH_FOR_CLAUDE_CODE.md](SGRAPH_FOR_CLAUDE_CODE.md) for tool reference, output examples, and workflows
 
 ## About SGraph
 

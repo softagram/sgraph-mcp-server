@@ -33,13 +33,23 @@ def register_load_model(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def sgraph_load_model(input: LoadModelInput):
-        """Load a graph model from file and return its ID for subsequent queries."""
+        """Load a graph model from file and return its ID for subsequent queries.
+        If the model was already auto-loaded at startup, returns the existing ID instantly."""
         try:
+            model_manager = get_model_manager()
+
+            # Return existing default model if already loaded
+            if model_manager.default_model_id:
+                return {
+                    "model_id": model_manager.default_model_id,
+                    "cached": True,
+                    "default_scope": model_manager.default_scope,
+                }
+
             is_valid, error = validate_path(input.path, must_exist=True)
             if not is_valid:
                 return {"error": f"Invalid path: {error}"}
 
-            model_manager = get_model_manager()
             model_id = await model_manager.load_model(input.path)
             return {"model_id": model_id}
 

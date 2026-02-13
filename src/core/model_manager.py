@@ -19,10 +19,13 @@ logger = logging.getLogger(__name__)
 
 class ModelManager:
     """Manages sgraph model loading and caching."""
-    
+
     def __init__(self):
         self._models: Dict[str, SGraph] = {}
+        self._model_paths: Dict[str, str] = {}  # model_id -> path
         self._loader = ModelLoader()
+        self._default_model_id: Optional[str] = None
+        self.default_scope: Optional[str] = None
         logger.info("🔧 ModelManager initialized")
     
     async def load_model(self, path: str) -> str:
@@ -58,6 +61,7 @@ class ModelManager:
             
             # Store model in memory cache
             self._models[model_id] = model
+            self._model_paths[model_id] = os.path.abspath(path)
             logger.info(f"💾 Model cached in memory (total models: {len(self._models)})")
             
             # Log basic model info
@@ -78,6 +82,41 @@ class ModelManager:
             logger.error(f"💥 {error_msg}")
             raise RuntimeError(error_msg) from e
     
+    def load_model_sync(self, path: str) -> str:
+        """Load a model synchronously (for startup auto-load)."""
+        logger.info(f"🔍 Sync-loading model from: {path}")
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Model file does not exist: {path}")
+
+        # Check if already loaded from this path
+        abs_path = os.path.abspath(path)
+        for mid, mpath in self._model_paths.items():
+            if mpath == abs_path:
+                logger.info(f"♻️ Model already loaded from {path}, reusing ID: {mid}")
+                return mid
+
+        file_size = os.path.getsize(path)
+        logger.info(f"📁 File size: {file_size / (1024*1024):.1f} MB")
+
+        start_time = time.perf_counter()
+        model = self._loader.load_model(path)
+        load_time = time.perf_counter() - start_time
+        logger.info(f"✅ Model loaded in {load_time:.2f}s")
+
+        model_id = nanoid.generate(size=24)
+        self._models[model_id] = model
+        self._model_paths[model_id] = abs_path
+        self._default_model_id = model_id
+        logger.info(f"🆔 Model ID: {model_id} (set as default)")
+
+        return model_id
+
+    @property
+    def default_model_id(self) -> Optional[str]:
+        """Get the default model ID (set by auto-load or first loaded model)."""
+        return self._default_model_id
+
     def get_model(self, model_id: str) -> Optional[SGraph]:
         """Retrieve a cached model by ID."""
         return self._models.get(model_id)
