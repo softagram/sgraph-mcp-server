@@ -107,7 +107,7 @@ sgraph-mcp  # Starts with claude-code profile (default)
 |------|---------|
 | `sgraph_load_model` | Load model file, get model_id |
 | `sgraph_search_elements` | Find symbols by pattern (replaces grep for code search) |
-| `sgraph_get_element_dependencies` | **KEY TOOL** - query dependencies with `result_level` abstraction |
+| `sgraph_get_element_dependencies` | **KEY TOOL** - query dependencies with `result_level` abstraction and `include_descendants` |
 | `sgraph_get_element_structure` | Explore hierarchy without reading source |
 | `sgraph_analyze_change_impact` | Check what breaks before modifying code |
 

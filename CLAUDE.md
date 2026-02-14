@@ -92,7 +92,7 @@ The server supports multiple profiles in `src/profiles/`:
 | Profile | Tools | Description |
 |---------|-------|-------------|
 | `legacy` | 14 | Full original tool set (default, backwards compatible) |
-| `claude-code` | 5 | Optimized for Claude Code - consolidated tools, TOON output format |
+| `claude-code` | 5 | Optimized for Claude Code - plain text TOON output, `include_descendants` support |
 
 **Claude Code profile tools** (see `SGRAPH_FOR_CLAUDE_CODE.md`):
 - `sgraph_search_elements` - Find symbols by pattern

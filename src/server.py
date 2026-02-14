@@ -56,6 +56,18 @@ Examples:
         choices=["sse", "stdio"],
         help="Transport to use (default: sse)",
     )
+    parser.add_argument(
+        "--auto-load",
+        type=str,
+        default=None,
+        help="Path to model file to load automatically at startup",
+    )
+    parser.add_argument(
+        "--default-scope",
+        type=str,
+        default=None,
+        help="Default scope path for searches (e.g., '/TalenomSoftware/Online/talenom.online.invoicepayment5.api')",
+    )
     return parser.parse_args()
 
 
@@ -83,6 +95,24 @@ def main():
     except ValueError as e:
         print(f"❌ Error: {e}", file=log)
         return 1
+
+    # Auto-load model in background thread (to avoid blocking MCP protocol startup)
+    if args.auto_load:
+        import threading
+        def _bg_load():
+            print(f"📂 Auto-loading model (background): {args.auto_load}", file=log, flush=True)
+            try:
+                from src.profiles.base import get_model_manager
+                mm = get_model_manager()
+                if args.default_scope:
+                    mm.default_scope = args.default_scope
+                model_id = mm.load_model_sync(args.auto_load)
+                print(f"✅ Model ready: {model_id}", file=log, flush=True)
+                if args.default_scope:
+                    print(f"🔍 Default scope: {args.default_scope}", file=log, flush=True)
+            except Exception as e:
+                print(f"⚠️ Auto-load failed: {e}", file=log, flush=True)
+        threading.Thread(target=_bg_load, daemon=True).start()
 
     # Start the server
     if args.transport == "sse":

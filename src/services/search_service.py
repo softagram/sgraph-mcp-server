@@ -39,16 +39,16 @@ class SearchService:
         # Validate and compile pattern
         is_valid, error = validate_pattern(pattern)
         if not is_valid:
-            logger.warning(f"Invalid pattern: {error}")
-            # Fallback to literal search
-            pattern = re.escape(pattern)
-        
-        try:
+            logger.debug(f"Pattern is not valid regex, trying as glob: {error}")
+            # Convert glob-style pattern to regex
+            glob_pattern = re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".")
+            try:
+                regex_pattern = re.compile(glob_pattern)
+            except re.error:
+                # Final fallback to literal search
+                regex_pattern = re.compile(re.escape(pattern))
+        else:
             regex_pattern = re.compile(pattern)
-        except re.error:
-            # Fallback to glob-style pattern
-            glob_pattern = pattern.replace("*", ".*").replace("?", ".")
-            regex_pattern = re.compile(glob_pattern)
         
         # Iterative traversal for performance
         stack = [start_element]
