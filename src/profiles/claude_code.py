@@ -1,20 +1,21 @@
 """
 Claude Code profile - optimized for AI-assisted software development.
 
-Aligned with CC_synthesis.md specification. Provides 4 consolidated tools
+Aligned with CC_synthesis.md specification. Provides consolidated tools
 designed for Claude Code's context constraints:
 
-Tools (per CC_synthesis.md):
+Tools:
 - sgraph_load_model: Load graph file (shared)
 - sgraph_search_elements: Find elements by name within scope
 - sgraph_get_element_dependencies: Dependencies with result_level abstraction
 - sgraph_get_element_structure: Hierarchy navigation (children)
-- sgraph_analyze_change_impact: Multi-level impact analysis
+- sgraph_analyze_change_impact: Multi-level impact analysis (with cycle/hub warnings)
+- sgraph_audit: Architectural health checks (cycles, hubs) — for occasional reviews
 
 Design principles:
 - Paths as first-class citizens (unambiguous element identification)
 - Abstraction as query parameter (result_level: function/file/module)
-- Progressive disclosure (5 tools vs 13+, 60% token reduction)
+- Progressive disclosure (6 tools vs 13+, 60% token reduction)
 - TOON output format (line-oriented, 50-60% token savings)
 """
 
@@ -52,6 +53,21 @@ def format_element_toon(path: str, element_type: str, name: str = "") -> str:
     if name:
         return f"{path} [{element_type}] {name}"
     return f"{path} [{element_type}]"
+
+
+def _get_parent_dir(path: str) -> str:
+    """Get the parent directory of the file containing an element.
+
+    For /project/src/module/file.py/ClassName → /project/src/module
+    For /project/src/module/file.py → /project/src/module
+    For /project/src/module (directory, no dot) → /project/src/module (itself)
+    """
+    parts = path.split("/")
+    for i, part in enumerate(parts):
+        if "." in part:  # Found file (has extension)
+            return "/".join(parts[:i])
+    # No file segment found — path is a directory, return it as-is
+    return path
 
 
 # =============================================================================
@@ -114,6 +130,23 @@ class AnalyzeChangeImpactInput(BaseModel):
     """Input for sgraph_analyze_change_impact (CC_synthesis.md lines 248-271)."""
     model_id: str
     element_path: str = Field(description="Element being modified")
+
+
+class AuditInput(BaseModel):
+    """Input for sgraph_audit — architectural health checks."""
+    model_id: str
+    scope_path: Optional[str] = Field(
+        default=None,
+        description="Limit analysis to subtree (e.g., '/project/src')"
+    )
+    checks: list[Literal["cycles", "hubs"]] = Field(
+        default=["cycles", "hubs"],
+        description="Checks to run: 'cycles' (circular deps), 'hubs' (high-coupling modules)"
+    )
+    aggregation_level: int = Field(
+        default=3,
+        description="Directory depth for module grouping (3='/project/component/module')"
+    )
 
 
 # =============================================================================
@@ -354,25 +387,92 @@ class ClaudeCodeProfile:
                 return {"error": f"Element not found: {input.element_path}"}
 
             try:
-                # Collect all incoming (what uses this element)
+                # Collect all elements in subtree (element + children, recursive)
+                # This ensures file-level analysis captures deps on classes/functions inside
+                subtree = []
+                stack = [element]
+                while stack:
+                    e = stack.pop()
+                    subtree.append(e)
+                    stack.extend(e.children)
+
+                # Collect all incoming (what uses this element or its children)
                 detailed = []
                 files = set()
                 modules = set()
+                incoming_dirs = set()
+                element_subtree_paths = {e.getPath() for e in subtree}
 
-                for assoc in element.incoming:
-                    source_path = assoc.fromElement.getPath()
-                    detailed.append(source_path)
+                for e in subtree:
+                    for assoc in e.incoming:
+                        source_path = assoc.fromElement.getPath()
+                        # Skip self-references and external deps
+                        if source_path in element_subtree_paths:
+                            continue
+                        if "/External/" in source_path:
+                            continue
+                        detailed.append(source_path)
 
-                    # Aggregate to file level (first 3 path components typically)
-                    parts = source_path.split("/")
-                    if len(parts) >= 3:
-                        files.add("/".join(parts[:3]))
+                        # Aggregate to file level (find first dotted segment)
+                        src_parts = source_path.split("/")
+                        file_path = source_path
+                        for idx, seg in enumerate(src_parts):
+                            if "." in seg:
+                                file_path = "/".join(src_parts[:idx + 1])
+                                break
+                        files.add(file_path)
 
-                    # Aggregate to module level (first 2 path components)
-                    if len(parts) >= 2:
-                        modules.add("/".join(parts[:2]))
+                        # Aggregate to module level (parent directory of file)
+                        modules.add(_get_parent_dir(source_path))
 
-                return {
+                        # Track parent directories for cycle detection
+                        incoming_dirs.add(_get_parent_dir(source_path))
+
+                # Collect outgoing deps for cycle/hub warnings
+                outgoing_dirs = set()
+                outgoing_count_non_external = 0
+
+                for e in subtree:
+                    for assoc in e.outgoing:
+                        target_path = assoc.toElement.getPath()
+                        if "/External/" in target_path:
+                            continue
+                        if target_path in element_subtree_paths:
+                            continue
+                        outgoing_count_non_external += 1
+                        outgoing_dirs.add(_get_parent_dir(target_path))
+
+                # Detect cycles: directories that appear in both incoming and outgoing
+                # (bidirectional dependency between this element's module and that module)
+                element_dir = _get_parent_dir(input.element_path)
+                incoming_dirs.discard(element_dir)
+                outgoing_dirs.discard(element_dir)
+                cycle_dirs = incoming_dirs & outgoing_dirs
+
+                # Build warnings
+                warnings = []
+                if cycle_dirs:
+                    warnings.append({
+                        "type": "dependency_cycle",
+                        "message": (
+                            f"Bidirectional dependencies with {len(cycle_dirs)} "
+                            f"module(s) — blast radius likely exceeds listed callers"
+                        ),
+                        "cycle_with": sorted(cycle_dirs),
+                    })
+
+                # Hub threshold: 30 outgoing non-external deps indicates a
+                # high-coupling element where changes tend to cascade widely
+                if outgoing_count_non_external > 30:
+                    warnings.append({
+                        "type": "hub_element",
+                        "message": (
+                            f"Hub element with {outgoing_count_non_external} outgoing "
+                            f"dependencies — changes here cascade widely"
+                        ),
+                    })
+
+                result = {
                     "element": input.element_path,
                     "element_type": element.getType() or "element",
 
@@ -391,5 +491,103 @@ class ClaudeCodeProfile:
                     "format": "TOON",
                 }
 
+                if warnings:
+                    result["warnings"] = warnings
+
+                return result
+
             except Exception as e:
                 return {"error": f"Impact analysis failed: {e}"}
+
+        @mcp.tool()
+        async def sgraph_audit(input: AuditInput):
+            """Run architectural health checks on the codebase. For occasional reviews, not daily use.
+
+            Available checks:
+            - "cycles": Find circular module dependencies (A depends on B, B depends on A)
+            - "hubs": Find modules with unusually high coupling (many dependencies)
+
+            aggregation_level controls module granularity:
+            - 2: /project/component (coarse, good for monorepos)
+            - 3: /project/component/module (default)
+            - 4+: deeper nesting for fine-grained analysis
+
+            Returns TOON format with cycles, hub modules, and summary metrics.
+            """
+            model = model_manager.get_model(input.model_id)
+            if model is None:
+                return {"error": "Model not loaded"}
+
+            try:
+                analysis = DependencyService.get_high_level_dependencies(
+                    model,
+                    scope_path=input.scope_path,
+                    aggregation_level=input.aggregation_level,
+                    include_external=False,
+                    include_metrics=True,
+                )
+
+                if "error" in analysis:
+                    return analysis
+
+                result = {
+                    "scope": analysis.get("scope_path"),
+                    "aggregation_level": input.aggregation_level,
+                    "format": "TOON",
+                }
+
+                if "cycles" in input.checks:
+                    cycles = analysis.get("metrics", {}).get(
+                        "circular_dependencies", []
+                    )
+                    result["cycles"] = {
+                        "count": len(cycles),
+                        "details": [
+                            (
+                                f"{c['module1']} <-> {c['module2']} "
+                                f"({c['count_1_to_2']}→, {c['count_2_to_1']}←)"
+                            )
+                            for c in cycles
+                        ],
+                    }
+
+                if "hubs" in input.checks:
+                    modules = analysis.get("modules", [])
+                    hub_threshold = 5
+                    outgoing_hubs = [
+                        m for m in modules
+                        if m["outgoing_count"] >= hub_threshold
+                    ]
+                    incoming_hubs = [
+                        m for m in modules
+                        if m["incoming_count"] >= hub_threshold
+                    ]
+
+                    result["hubs"] = {
+                        "most_dependent": [
+                            f"{m['path']} ({m['outgoing_count']} outgoing)"
+                            for m in sorted(
+                                outgoing_hubs,
+                                key=lambda x: x["outgoing_count"],
+                                reverse=True,
+                            )[:10]
+                        ],
+                        "most_depended_upon": [
+                            f"{m['path']} ({m['incoming_count']} incoming)"
+                            for m in sorted(
+                                incoming_hubs,
+                                key=lambda x: x["incoming_count"],
+                                reverse=True,
+                            )[:10]
+                        ],
+                    }
+
+                result["summary"] = {
+                    "total_modules": analysis.get("total_modules", 0),
+                    "total_dependencies": analysis.get("total_dependencies", 0),
+                }
+
+                return result
+
+            except Exception as e:
+                return {"error": f"Audit failed: {e}"}

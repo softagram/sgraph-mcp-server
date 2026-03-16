@@ -16,7 +16,7 @@ uv sync
 uv run python -m src.server
 
 # Run with specific profile
-uv run python -m src.server --profile claude-code  # 5 optimized tools
+uv run python -m src.server --profile claude-code  # 6 optimized tools
 uv run python -m src.server --profile legacy       # 14 tools (default)
 
 # Run all tests
@@ -92,13 +92,14 @@ The server supports multiple profiles in `src/profiles/`:
 | Profile | Tools | Description |
 |---------|-------|-------------|
 | `legacy` | 14 | Full original tool set (default, backwards compatible) |
-| `claude-code` | 5 | Optimized for Claude Code - consolidated tools, TOON output format |
+| `claude-code` | 6 | Optimized for Claude Code - consolidated tools, TOON output format |
 
 **Claude Code profile tools** (see `SGRAPH_FOR_CLAUDE_CODE.md`):
 - `sgraph_search_elements` - Find symbols by pattern
 - `sgraph_get_element_dependencies` - THE KEY TOOL with `result_level` abstraction
 - `sgraph_get_element_structure` - Explore hierarchy without reading source
-- `sgraph_analyze_change_impact` - Impact analysis before code changes
+- `sgraph_analyze_change_impact` - Impact analysis with cycle/hub warnings
+- `sgraph_audit` - Architectural health checks (cycles, hubs) for occasional reviews
 
 ## Development Notes
 

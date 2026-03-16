@@ -109,7 +109,8 @@ sgraph-mcp  # Starts with claude-code profile (default)
 | `sgraph_search_elements` | Find symbols by pattern (replaces grep for code search) |
 | `sgraph_get_element_dependencies` | **KEY TOOL** - query dependencies with `result_level` abstraction |
 | `sgraph_get_element_structure` | Explore hierarchy without reading source |
-| `sgraph_analyze_change_impact` | Check what breaks before modifying code |
+| `sgraph_analyze_change_impact` | Check what breaks before modifying code (includes cycle/hub warnings) |
+| `sgraph_audit` | Architectural health checks — cycles, hubs (for occasional reviews) |
 
 ### Project Name Convention
 
