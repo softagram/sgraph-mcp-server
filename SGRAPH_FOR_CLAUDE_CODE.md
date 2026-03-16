@@ -14,7 +14,7 @@ SGraph provides **pre-computed dependency graphs** that answer architectural que
 ## Quick Start
 
 ```bash
-# Start the server with Claude Code profile (5 optimized tools)
+# Start the server with Claude Code profile (6 optimized tools)
 uv run python -m src.server --profile claude-code
 ```
 
@@ -30,7 +30,7 @@ Add to Claude Code's MCP config:
 }
 ```
 
-## The 5 Tools
+## The 6 Tools
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
@@ -38,7 +38,8 @@ Add to Claude Code's MCP config:
 | `sgraph_search_elements` | Find symbols by name | When you know name but not path |
 | `sgraph_get_element_dependencies` | Query dependencies | Before modifying code |
 | `sgraph_get_element_structure` | Explore hierarchy | Instead of Read to see contents |
-| `sgraph_analyze_change_impact` | Full impact analysis | Before any public interface change |
+| `sgraph_analyze_change_impact` | Impact analysis with warnings | Before any public interface change |
+| `sgraph_audit` | Architectural health checks | Tech debt reviews, onboarding |
 
 ---
 
@@ -212,22 +213,91 @@ sgraph_analyze_change_impact(
       "/project/src/api/endpoints.py/AdminEndpoint/delete_user",
       "/project/src/middleware/auth.py/require_auth"
     ],
-    "file": ["/project/src/api", "/project/src/middleware"],
-    "module": ["/project/src"]
+    "file": ["/project/src/api/endpoints.py", "/project/src/middleware/auth.py"],
+    "module": ["/project/src/api", "/project/src/middleware"]
   },
   "summary": {
     "incoming_count": 3,
     "files_affected": 2,
-    "modules_affected": 1
-  }
+    "modules_affected": 2
+  },
+  "warnings": [
+    {
+      "type": "dependency_cycle",
+      "message": "Bidirectional dependencies with 1 module(s) — blast radius likely exceeds listed callers",
+      "cycle_with": ["/project/src/middleware"]
+    }
+  ]
 }
 ```
+
+**Automatic warnings** (included only when detected):
+- **`dependency_cycle`**: The element's module has bidirectional dependencies with another module — changes may cascade in both directions, making the blast radius larger than the incoming count suggests.
+- **`hub_element`**: The element has >30 outgoing non-external dependencies — it's a high-coupling hub where changes tend to cascade widely.
 
 **When to use**:
 - Before changing function signature → see all call sites
 - Before renaming class → see all importers
 - Before deleting code → verify nothing depends on it
 - Planning refactoring → understand blast radius
+
+---
+
+### sgraph_audit
+
+**Architectural health checks** — for occasional tech debt reviews, not daily use.
+
+```python
+# Find all circular dependencies and hub modules
+sgraph_audit(
+    model_id="...",
+    scope_path="/project/src",        # Optional: limit scope
+    checks=["cycles", "hubs"],        # What to check
+    aggregation_level=3               # Module granularity
+)
+```
+
+**Output**:
+```json
+{
+  "scope": "/project/src",
+  "aggregation_level": 3,
+  "cycles": {
+    "count": 2,
+    "details": [
+      "/project/src/core <-> /project/src/api (12→, 5←)",
+      "/project/src/auth <-> /project/src/middleware (3→, 2←)"
+    ]
+  },
+  "hubs": {
+    "most_dependent": [
+      "/project/src/api (8 outgoing)",
+      "/project/src/core (6 outgoing)"
+    ],
+    "most_depended_upon": [
+      "/project/src/models (9 incoming)",
+      "/project/src/utils (7 incoming)"
+    ]
+  },
+  "summary": {
+    "total_modules": 12,
+    "total_dependencies": 45
+  }
+}
+```
+
+**aggregation_level controls granularity**:
+| Level | Meaning | Example |
+|-------|---------|---------|
+| `2` | Component level | `/project/component` (good for monorepos) |
+| `3` | Module level | `/project/component/module` (default) |
+| `4+` | Sub-module level | Deeper nesting for fine-grained analysis |
+
+**When to use**:
+- Tech debt reviews → find circular dependencies
+- New developer onboarding → understand module coupling
+- Architecture audits → identify hub modules
+- **Not** during regular feature development (use `analyze_change_impact` instead)
 
 ---
 

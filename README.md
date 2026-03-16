@@ -209,7 +209,7 @@ The server supports multiple profiles optimized for different use cases:
 | Profile | Tools | Use Case |
 |---------|-------|----------|
 | `legacy` | 14 | Full tool set (backwards compatible, default) |
-| `claude-code` | 5 | AI-assisted software development (optimized for Claude Code) |
+| `claude-code` | 6 | AI-assisted software development (optimized for Claude Code) |
 
 ### Run the server
 
@@ -217,7 +217,7 @@ The server supports multiple profiles optimized for different use cases:
 # Default (legacy profile with all 14 tools)
 uv run python -m src.server
 
-# Claude Code optimized (5 consolidated tools, 60% fewer tokens)
+# Claude Code optimized (6 consolidated tools, 60% fewer tokens)
 uv run python -m src.server --profile claude-code
 
 # Explicit legacy
