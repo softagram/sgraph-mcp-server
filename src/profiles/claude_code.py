@@ -1,9 +1,6 @@
 """
 Claude Code profile - optimized for AI-assisted software development.
 
-Aligned with CC_synthesis.md specification. Provides consolidated tools
-designed for Claude Code's context constraints:
-
 Tools:
 - sgraph_load_model: Load graph file (shared)
 - sgraph_search_elements: Find elements by name within scope
@@ -15,8 +12,8 @@ Tools:
 Design principles:
 - Paths as first-class citizens (unambiguous element identification)
 - Abstraction as query parameter (result_level: function/file/module)
-- Progressive disclosure (6 tools vs 13+, 60% token reduction)
-- TOON output format (line-oriented, 50-60% token savings)
+- Progressive disclosure (7 tools vs 13+)
+- JSON output for reliable parsing by LLMs
 """
 
 from typing import Optional, Literal
@@ -31,28 +28,74 @@ from src.core.element_converter import ElementConverter
 
 
 # =============================================================================
-# TOON Output Format Utilities
+# Output Helpers
 # =============================================================================
-# TOON (Token-Optimized Object Notation) reduces token consumption by 50-60%
-# compared to verbose JSON. Line-oriented format for large datasets.
-#
-# Example:
-#   JSON:  {"source":"src/A.ts","target":"src/B.ts","type":"import"}  (~45 tokens)
-#   TOON:  src/A.ts -> src/B.ts (import)                              (~15 tokens)
 
 
-def format_dependency_toon(from_path: str, to_path: str, dep_type: str = "") -> str:
-    """Format a single dependency as TOON line."""
-    if dep_type:
-        return f"{from_path} -> {to_path} ({dep_type})"
-    return f"{from_path} -> {to_path}"
+def _format_structure(elem, current_depth: int, max_depth: int) -> dict:
+    """Build a dict for element hierarchy."""
+    result = {
+        "path": elem.getPath(),
+        "type": elem.getType() or "element",
+        "name": elem.name,
+    }
+    if current_depth < max_depth and elem.children:
+        result["children"] = [
+            _format_structure(child, current_depth + 1, max_depth)
+            for child in elem.children
+        ]
+    return result
 
 
-def format_element_toon(path: str, element_type: str, name: str = "") -> str:
-    """Format a single element as TOON line."""
-    if name:
-        return f"{path} [{element_type}] {name}"
-    return f"{path} [{element_type}]"
+def _collect_deps(element, base_path: str, direction: str, result_level, include_descendants: bool) -> list[dict]:
+    """Collect dependency dicts for an element, optionally including descendants."""
+    deps = []
+    seen = set()
+
+    def aggregate(path: str) -> str:
+        if result_level is None:
+            return path
+        parts = path.split("/")
+        return "/".join(parts[:result_level + 1]) if len(parts) > result_level else path
+
+    def collect_for_element(elem):
+        elem_path = elem.getPath()
+        relative = "" if elem_path == base_path else elem_path[len(base_path) + 1:]
+
+        if direction in ("outgoing", "both"):
+            for assoc in elem.outgoing:
+                target = aggregate(assoc.toElement.getPath())
+                dep_type = getattr(assoc, 'type', '')
+                key = ("out", relative, target, dep_type)
+                if key not in seen:
+                    seen.add(key)
+                    entry = {"direction": "outgoing", "target": target}
+                    if dep_type:
+                        entry["type"] = dep_type
+                    if relative:
+                        entry["from_descendant"] = relative
+                    deps.append(entry)
+
+        if direction in ("incoming", "both"):
+            for assoc in elem.incoming:
+                source = aggregate(assoc.fromElement.getPath())
+                dep_type = getattr(assoc, 'type', '')
+                key = ("in", source, relative, dep_type)
+                if key not in seen:
+                    seen.add(key)
+                    entry = {"direction": "incoming", "source": source}
+                    if dep_type:
+                        entry["type"] = dep_type
+                    if relative:
+                        entry["to_descendant"] = relative
+                    deps.append(entry)
+
+        if include_descendants:
+            for child in elem.children:
+                collect_for_element(child)
+
+    collect_for_element(element)
+    return deps
 
 
 def _get_parent_dir(path: str) -> str:
@@ -70,18 +113,27 @@ def _get_parent_dir(path: str) -> str:
     return path
 
 
+def _get_file_path(path: str) -> str:
+    """Extract the file path from an element path (up to and including the .ext segment)."""
+    parts = path.split("/")
+    for i, part in enumerate(parts):
+        if "." in part:
+            return "/".join(parts[:i + 1])
+    return path
+
+
 # =============================================================================
-# Input Schemas (aligned with CC_synthesis.md)
+# Input Schemas
 # =============================================================================
 
 
 class SearchElementsInput(BaseModel):
-    """Input for sgraph_search_elements (CC_synthesis.md lines 275-291)."""
-    model_id: str
-    query: str = Field(description="Name pattern (supports wildcards like 'validate*')")
+    """Input for sgraph_search_elements."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
+    query: str = Field(description="Name pattern (supports wildcards like '*Service*' or regex like '.*Service.*')")
     scope_path: Optional[str] = Field(
         default=None,
-        description="Limit search to subtree (e.g., '/project/src/auth')"
+        description="Limit search to subtree. Uses server's default scope if configured and not specified."
     )
     element_types: Optional[list[str]] = Field(
         default=None,
@@ -91,12 +143,8 @@ class SearchElementsInput(BaseModel):
 
 
 class GetElementDependenciesInput(BaseModel):
-    """Input for sgraph_get_element_dependencies (CC_synthesis.md lines 171-218).
-
-    The result_level parameter is THE KEY FEATURE - enables querying same
-    underlying data at different abstraction levels.
-    """
-    model_id: str
+    """Input for sgraph_get_element_dependencies."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
     element_path: str = Field(description="Full hierarchical path to element")
     direction: Literal["incoming", "outgoing", "both"] = Field(
         default="both",
@@ -106,12 +154,12 @@ class GetElementDependenciesInput(BaseModel):
         default=None,
         description=(
             "Aggregate results to hierarchy depth. "
-            "None=raw (as captured), 3=class, 2=file, 1=module/directory"
+            "None=raw (as captured), 4=file, 3=directory, 2=repository"
         )
     )
-    max_depth: Optional[int] = Field(
-        default=None,
-        description="Transitive dependency traversal depth"
+    include_descendants: bool = Field(
+        default=False,
+        description="Include dependencies of child elements. Relative paths (no leading /) show which descendant."
     )
     include_external: bool = Field(
         default=True,
@@ -120,21 +168,21 @@ class GetElementDependenciesInput(BaseModel):
 
 
 class GetElementStructureInput(BaseModel):
-    """Input for sgraph_get_element_structure (CC_synthesis.md lines 222-244)."""
-    model_id: str
+    """Input for sgraph_get_element_structure."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
     element_path: str = Field(description="Starting point path")
     max_depth: int = Field(default=2, description="How deep to traverse children")
 
 
 class AnalyzeChangeImpactInput(BaseModel):
-    """Input for sgraph_analyze_change_impact (CC_synthesis.md lines 248-271)."""
-    model_id: str
+    """Input for sgraph_analyze_change_impact."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
     element_path: str = Field(description="Element being modified")
 
 
 class AuditInput(BaseModel):
     """Input for sgraph_audit — architectural health checks."""
-    model_id: str
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
     scope_path: Optional[str] = Field(
         default=None,
         description="Limit analysis to subtree (e.g., '/project/src')"
@@ -149,6 +197,100 @@ class AuditInput(BaseModel):
     )
 
 
+class ResolveLocalPathInput(BaseModel):
+    """Input for sgraph_resolve_local_path - map sgraph paths to local filesystem."""
+    sgraph_path: str = Field(description="Sgraph element path (e.g., /Organization/Online/repo/file.cs)")
+
+
+# =============================================================================
+# Path Resolution (sgraph -> local filesystem)
+# =============================================================================
+
+import json
+import os
+from pathlib import Path
+
+_path_resolver_config = None
+
+
+def _load_path_config():
+    """Load path mapping configuration."""
+    global _path_resolver_config
+    if _path_resolver_config is not None:
+        return _path_resolver_config
+
+    config = {"mappings": [], "fallback_roots": ["/mnt/c/code/"], "repo_overrides": {}}
+
+    # Search for config file
+    search_paths = [
+        Path(__file__).parent.parent.parent / "sgraph-mapping.json",
+        Path.cwd() / "sgraph-mapping.json",
+        Path.home() / ".config" / "sgraph-mapping.json",
+    ]
+
+    for p in search_paths:
+        if p.exists():
+            with open(p, 'r') as f:
+                config = json.load(f)
+            break
+
+    _path_resolver_config = config
+    return config
+
+
+def _resolve_sgraph_path(sgraph_path: str) -> dict:
+    """Resolve sgraph path to local filesystem path."""
+    config = _load_path_config()
+    parts = sgraph_path.strip('/').split('/')
+
+    result = {
+        "sgraph_path": sgraph_path,
+        "repo_name": parts[2] if len(parts) > 2 else None,
+        "local_path": None,
+        "exists": False,
+        "resolved_via": "not_found"
+    }
+
+    if len(parts) < 3:
+        return result
+
+    repo_name = parts[2]
+    repo_name = config.get("repo_name_overrides", {}).get(repo_name, repo_name)
+    result["repo_name"] = repo_name
+
+    # Try mappings
+    for mapping in config.get("mappings", []):
+        prefix = mapping.get("sgraph_prefix", "/")
+        if sgraph_path.startswith(prefix):
+            local_root = mapping.get("local_root", "")
+            strip_levels = mapping.get("strip_levels", 2)
+
+            remaining_parts = parts[strip_levels + 1:] if len(parts) > strip_levels + 1 else []
+            local_path = os.path.join(local_root, repo_name, *remaining_parts)
+
+            if os.path.exists(local_path):
+                result["local_path"] = local_path
+                result["exists"] = True
+                result["resolved_via"] = "mapping"
+                return result
+
+            if result["local_path"] is None:
+                result["local_path"] = local_path
+
+    # Try fallback roots
+    remaining_parts = parts[3:] if len(parts) > 3 else []
+    for root in config.get("fallback_roots", []):
+        root = os.path.expanduser(root)
+        local_path = os.path.join(root, repo_name, *remaining_parts)
+        if os.path.exists(local_path):
+            result["local_path"] = local_path
+            result["exists"] = True
+            result["resolved_via"] = "fallback"
+            return result
+
+    return result
+
+
 # =============================================================================
 # Profile Implementation
 # =============================================================================
@@ -156,17 +298,10 @@ class AuditInput(BaseModel):
 
 @register_profile("claude-code")
 class ClaudeCodeProfile:
-    """Profile optimized for Claude Code IDE integration.
-
-    Implements CC_synthesis.md specification exactly:
-    - sgraph_search_elements: Find elements by name within scope
-    - sgraph_get_element_dependencies: THE KEY TOOL with result_level abstraction
-    - sgraph_get_element_structure: Hierarchy navigation
-    - sgraph_analyze_change_impact: Multi-level impact for change planning
-    """
+    """Profile optimized for Claude Code IDE integration."""
 
     name = "claude-code"
-    description = "Optimized for Claude Code - CC_synthesis.md aligned"
+    description = "Optimized for Claude Code - JSON output"
 
     def register_tools(self, mcp: FastMCP) -> None:
         """Register Claude Code-optimized tools with the MCP server."""
@@ -179,41 +314,42 @@ class ClaudeCodeProfile:
 
             When to use:
             - You know a class/function name but not its file location
-            - You want to find all implementations of a pattern (e.g., "*Service", "*Handler")
+            - You want to find all implementations of a pattern (e.g., "*Service*", "*Handler")
             - You need to locate a symbol before querying its dependencies
 
             Parameters:
-            - query: Regex pattern (e.g., ".*Manager.*", "validate.*", "^test_")
-            - scope_path: Limit to subtree (e.g., "/project/src/auth") - faster, fewer results
+            - query: Wildcards ("*Service*") or regex (".*Service.*") or substring ("Service")
+            - scope_path: Limit to subtree - faster, fewer results. Auto-set if server has default scope.
             - element_types: Filter by ["class", "function", "method", "file", "dir"]
+            - model_id: Omit to use auto-loaded model
 
-            Returns TOON format: /path/to/element [type] name
+            Returns JSON with match count and element list.
             """
-            model = model_manager.get_model(input.model_id)
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
             if model is None:
-                return {"error": "Model not loaded"}
+                return {"error": f"Model '{mid}' not found"}
+
+            scope = input.scope_path or model_manager.default_scope
 
             try:
-                # Use existing SearchService
                 elements = SearchService.search_elements_by_name(
                     model,
                     input.query,
                     element_type=input.element_types[0] if input.element_types else None,
-                    scope_path=input.scope_path,
+                    scope_path=scope,
                 )
 
-                # Limit and format as TOON
                 limited = elements[:input.max_results]
-                toon_lines = [
-                    format_element_toon(e.getPath(), e.getType() or "element", e.name)
-                    for e in limited
-                ]
-
                 return {
-                    "results": toon_lines,
-                    "count": len(limited),
-                    "total_matches": len(elements),
-                    "format": "TOON",
+                    "shown": len(limited),
+                    "total": len(elements),
+                    "elements": [
+                        {"path": e.getPath(), "type": e.getType() or "element", "name": e.name}
+                        for e in limited
+                    ],
                 }
             except Exception as e:
                 return {"error": f"Search failed: {e}"}
@@ -232,80 +368,48 @@ class ClaudeCodeProfile:
             - "outgoing": What THIS element uses (callees, imports) - for understanding context
             - "both": Both directions in one call
 
-            result_level (THE KEY FEATURE - controls abstraction):
-            - None: Raw dependencies (function→function) - for precise call sites
+            result_level (controls abstraction):
+            - None: Raw dependencies (function->function) - for precise call sites
             - 4: File level - "which files depend on this?"
             - 3: Directory level - "which directories depend on this?"
             - 2: Repository level - "which repos depend on this?"
 
-            Example: SElement class with 41 raw deps → 2 unique at repo level
+            include_descendants:
+            - false (default): Only this element's own dependencies
+            - true: Also include children's dependencies. Relative paths (no leading /)
+              show which descendant: "MyClass/Save -> /target (call)"
 
-            Returns TOON format: /from/path -> /to/path (type)
+            Returns JSON with outgoing/incoming dependency lists.
             """
-            model = model_manager.get_model(input.model_id)
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
             if model is None:
-                return {"error": "Model not loaded"}
+                return {"error": f"Model '{mid}' not found"}
 
             element = model.findElementFromPath(input.element_path)
             if element is None:
                 return {"error": f"Element not found: {input.element_path}"}
 
             try:
-                result = {
-                    "element": input.element_path,
-                    "direction": input.direction,
-                    "result_level": input.result_level,
-                    "format": "TOON",
-                }
-
-                def aggregate_to_level(path: str, level: Optional[int]) -> str:
-                    """Aggregate path to specified hierarchy level."""
-                    if level is None:
-                        return path
-                    parts = path.split("/")
-                    # Level 1 = first 2 parts, level 2 = first 3 parts, etc.
-                    return "/".join(parts[:level + 1]) if len(parts) > level else path
-
-                def collect_dependencies(direction: str) -> list[str]:
-                    """Collect and format dependencies for given direction."""
-                    deps = []
-                    seen = set()
-
-                    if direction == "outgoing":
-                        associations = element.outgoing
-                        for assoc in associations:
-                            target = assoc.toElement.getPath()
-                            aggregated = aggregate_to_level(target, input.result_level)
-                            if aggregated not in seen:
-                                seen.add(aggregated)
-                                dep_type = getattr(assoc, 'type', '')
-                                deps.append(format_dependency_toon(
-                                    input.element_path, aggregated, dep_type
-                                ))
-                    else:  # incoming
-                        associations = element.incoming
-                        for assoc in associations:
-                            source = assoc.fromElement.getPath()
-                            aggregated = aggregate_to_level(source, input.result_level)
-                            if aggregated not in seen:
-                                seen.add(aggregated)
-                                dep_type = getattr(assoc, 'type', '')
-                                deps.append(format_dependency_toon(
-                                    aggregated, input.element_path, dep_type
-                                ))
-
-                    return deps
+                result = {}
 
                 if input.direction in ("outgoing", "both"):
-                    result["outgoing"] = collect_dependencies("outgoing")
-                    result["outgoing_count"] = len(result["outgoing"])
+                    out_deps = _collect_deps(
+                        element, input.element_path, "outgoing",
+                        input.result_level, input.include_descendants,
+                    )
+                    result["outgoing"] = out_deps
 
                 if input.direction in ("incoming", "both"):
-                    result["incoming"] = collect_dependencies("incoming")
-                    result["incoming_count"] = len(result["incoming"])
+                    in_deps = _collect_deps(
+                        element, input.element_path, "incoming",
+                        input.result_level, input.include_descendants,
+                    )
+                    result["incoming"] = in_deps
 
                 return result
-
             except Exception as e:
                 return {"error": f"Dependency query failed: {e}"}
 
@@ -319,40 +423,26 @@ class ClaudeCodeProfile:
             - Understand class methods before diving into implementation
 
             max_depth:
-            - 1: Direct children only (file→classes, dir→files)
-            - 2: Two levels (file→classes→methods) - usually sufficient
+            - 1: Direct children only (file->classes, dir->files)
+            - 2: Two levels (file->classes->methods) - usually sufficient
             - 3+: Deeper nesting (rarely needed)
 
-            Returns nested JSON with path, type, name, children[].
+            Returns JSON hierarchy with path, type, name, and children.
             Much cheaper than Read - use this first to decide what to read.
             """
-            model = model_manager.get_model(input.model_id)
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
             if model is None:
-                return {"error": "Model not loaded"}
+                return {"error": f"Model '{mid}' not found"}
 
             element = model.findElementFromPath(input.element_path)
             if element is None:
                 return {"error": f"Element not found: {input.element_path}"}
 
-            def build_structure(elem, current_depth: int, max_depth: int) -> dict:
-                """Recursively build structure up to max_depth."""
-                node = {
-                    "path": elem.getPath(),
-                    "type": elem.getType() or "element",
-                    "name": elem.name,
-                }
-
-                if current_depth < max_depth and elem.children:
-                    node["children"] = [
-                        build_structure(child, current_depth + 1, max_depth)
-                        for child in elem.children
-                    ]
-
-                return node
-
             try:
-                structure = build_structure(element, 0, input.max_depth)
-                return structure
+                return _format_structure(element, 0, input.max_depth)
             except Exception as e:
                 return {"error": f"Structure query failed: {e}"}
 
@@ -362,25 +452,27 @@ class ClaudeCodeProfile:
 
             Returns ALL abstraction levels at once (no need for multiple calls):
             - detailed: Every function/method that uses this element
-            - file: Which files would need changes
-            - module: Which modules/repos are affected
+            - by_file: Which files would need changes
+            - by_module: Which modules/repos are affected
+
+            Automatic warnings (when detected):
+            - dependency_cycle: bidirectional module deps — blast radius exceeds listed callers
+            - hub_element: >30 outgoing deps — changes cascade widely
 
             When to use:
-            - Before changing function signature → see all call sites
-            - Before renaming class → see all importers
-            - Before deleting code → verify nothing depends on it
-            - Planning large refactoring → understand blast radius
+            - Before changing function signature -> see all call sites
+            - Before renaming class -> see all importers
+            - Before deleting code -> verify nothing depends on it
+            - Planning large refactoring -> understand blast radius
 
-            Example output for SElement class:
-              incoming_count: 41 (functions calling it)
-              files_affected: 2 (files to modify)
-              modules_affected: 2 (repos impacted)
-
-            This is the "measure twice, cut once" tool.
+            Returns JSON with summary, warnings, and callers at multiple aggregation levels.
             """
-            model = model_manager.get_model(input.model_id)
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
             if model is None:
-                return {"error": "Model not loaded"}
+                return {"error": f"Model '{mid}' not found"}
 
             element = model.findElementFromPath(input.element_path)
             if element is None:
@@ -388,44 +480,30 @@ class ClaudeCodeProfile:
 
             try:
                 # Collect all elements in subtree (element + children, recursive)
-                # This ensures file-level analysis captures deps on classes/functions inside
                 subtree = []
                 stack = [element]
                 while stack:
                     e = stack.pop()
                     subtree.append(e)
                     stack.extend(e.children)
+                subtree_paths = {e.getPath() for e in subtree}
 
                 # Collect all incoming (what uses this element or its children)
                 detailed = []
                 files = set()
                 modules = set()
                 incoming_dirs = set()
-                element_subtree_paths = {e.getPath() for e in subtree}
 
                 for e in subtree:
                     for assoc in e.incoming:
                         source_path = assoc.fromElement.getPath()
-                        # Skip self-references and external deps
-                        if source_path in element_subtree_paths:
+                        if source_path in subtree_paths:
                             continue
                         if "/External/" in source_path:
                             continue
                         detailed.append(source_path)
-
-                        # Aggregate to file level (find first dotted segment)
-                        src_parts = source_path.split("/")
-                        file_path = source_path
-                        for idx, seg in enumerate(src_parts):
-                            if "." in seg:
-                                file_path = "/".join(src_parts[:idx + 1])
-                                break
-                        files.add(file_path)
-
-                        # Aggregate to module level (parent directory of file)
+                        files.add(_get_file_path(source_path))
                         modules.add(_get_parent_dir(source_path))
-
-                        # Track parent directories for cycle detection
                         incoming_dirs.add(_get_parent_dir(source_path))
 
                 # Collect outgoing deps for cycle/hub warnings
@@ -437,65 +515,44 @@ class ClaudeCodeProfile:
                         target_path = assoc.toElement.getPath()
                         if "/External/" in target_path:
                             continue
-                        if target_path in element_subtree_paths:
+                        if target_path in subtree_paths:
                             continue
                         outgoing_count_non_external += 1
                         outgoing_dirs.add(_get_parent_dir(target_path))
 
-                # Detect cycles: directories that appear in both incoming and outgoing
-                # (bidirectional dependency between this element's module and that module)
+                # Detect cycles: directories in both incoming and outgoing
                 element_dir = _get_parent_dir(input.element_path)
                 incoming_dirs.discard(element_dir)
                 outgoing_dirs.discard(element_dir)
                 cycle_dirs = incoming_dirs & outgoing_dirs
 
-                # Build warnings
-                warnings = []
-                if cycle_dirs:
-                    warnings.append({
-                        "type": "dependency_cycle",
-                        "message": (
-                            f"Bidirectional dependencies with {len(cycle_dirs)} "
-                            f"module(s) — blast radius likely exceeds listed callers"
-                        ),
-                        "cycle_with": sorted(cycle_dirs),
-                    })
-
-                # Hub threshold: 30 outgoing non-external deps indicates a
-                # high-coupling element where changes tend to cascade widely
-                if outgoing_count_non_external > 30:
-                    warnings.append({
-                        "type": "hub_element",
-                        "message": (
-                            f"Hub element with {outgoing_count_non_external} outgoing "
-                            f"dependencies — changes here cascade widely"
-                        ),
-                    })
-
+                # Build result
                 result = {
-                    "element": input.element_path,
-                    "element_type": element.getType() or "element",
-
-                    "incoming_by_level": {
-                        "detailed": detailed,
-                        "file": sorted(files),
-                        "module": sorted(modules),
-                    },
-
                     "summary": {
-                        "incoming_count": len(detailed),
-                        "files_affected": len(files),
-                        "modules_affected": len(modules),
+                        "callers": len(detailed),
+                        "files": len(files),
+                        "modules": len(modules),
                     },
-
-                    "format": "TOON",
+                    "warnings": [],
+                    "detailed": detailed,
+                    "by_file": sorted(files),
+                    "by_module": sorted(modules),
                 }
 
-                if warnings:
-                    result["warnings"] = warnings
+                if cycle_dirs:
+                    result["warnings"].append({
+                        "type": "dependency_cycle",
+                        "message": f"Bidirectional deps with {len(cycle_dirs)} module(s) — blast radius likely exceeds listed callers",
+                        "modules": sorted(cycle_dirs),
+                    })
+
+                if outgoing_count_non_external > 30:
+                    result["warnings"].append({
+                        "type": "hub_element",
+                        "message": f"{outgoing_count_non_external} outgoing deps — changes here cascade widely",
+                    })
 
                 return result
-
             except Exception as e:
                 return {"error": f"Impact analysis failed: {e}"}
 
@@ -512,11 +569,14 @@ class ClaudeCodeProfile:
             - 3: /project/component/module (default)
             - 4+: deeper nesting for fine-grained analysis
 
-            Returns TOON format with cycles, hub modules, and summary metrics.
+            Returns JSON with cycles, hub modules, and summary metrics.
             """
-            model = model_manager.get_model(input.model_id)
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
             if model is None:
-                return {"error": "Model not loaded"}
+                return {"error": f"Model '{mid}' not found"}
 
             try:
                 analysis = DependencyService.get_high_level_dependencies(
@@ -528,66 +588,74 @@ class ClaudeCodeProfile:
                 )
 
                 if "error" in analysis:
-                    return analysis
+                    return {"error": analysis["error"]}
 
                 result = {
-                    "scope": analysis.get("scope_path"),
-                    "aggregation_level": input.aggregation_level,
-                    "format": "TOON",
+                    "total_modules": analysis.get("total_modules", 0),
+                    "total_dependencies": analysis.get("total_dependencies", 0),
                 }
 
                 if "cycles" in input.checks:
-                    cycles = analysis.get("metrics", {}).get(
+                    raw_cycles = analysis.get("metrics", {}).get(
                         "circular_dependencies", []
                     )
-                    result["cycles"] = {
-                        "count": len(cycles),
-                        "details": [
-                            (
-                                f"{c['module1']} <-> {c['module2']} "
-                                f"({c['count_1_to_2']}→, {c['count_2_to_1']}←)"
-                            )
-                            for c in cycles
-                        ],
-                    }
+                    result["cycles"] = [
+                        {
+                            "module1": c["module1"],
+                            "module2": c["module2"],
+                            "forward": c["count_1_to_2"],
+                            "backward": c["count_2_to_1"],
+                        }
+                        for c in raw_cycles
+                    ]
 
                 if "hubs" in input.checks:
                     modules = analysis.get("modules", [])
                     hub_threshold = 5
-                    outgoing_hubs = [
-                        m for m in modules
-                        if m["outgoing_count"] >= hub_threshold
-                    ]
-                    incoming_hubs = [
-                        m for m in modules
-                        if m["incoming_count"] >= hub_threshold
-                    ]
-
-                    result["hubs"] = {
-                        "most_dependent": [
-                            f"{m['path']} ({m['outgoing_count']} outgoing)"
-                            for m in sorted(
-                                outgoing_hubs,
-                                key=lambda x: x["outgoing_count"],
-                                reverse=True,
-                            )[:10]
+                    result["most_dependent"] = sorted(
+                        [
+                            {"path": m["path"], "outgoing": m["outgoing_count"]}
+                            for m in modules if m["outgoing_count"] >= hub_threshold
                         ],
-                        "most_depended_upon": [
-                            f"{m['path']} ({m['incoming_count']} incoming)"
-                            for m in sorted(
-                                incoming_hubs,
-                                key=lambda x: x["incoming_count"],
-                                reverse=True,
-                            )[:10]
+                        key=lambda x: x["outgoing"],
+                        reverse=True,
+                    )[:10]
+                    result["most_depended_upon"] = sorted(
+                        [
+                            {"path": m["path"], "incoming": m["incoming_count"]}
+                            for m in modules if m["incoming_count"] >= hub_threshold
                         ],
-                    }
-
-                result["summary"] = {
-                    "total_modules": analysis.get("total_modules", 0),
-                    "total_dependencies": analysis.get("total_dependencies", 0),
-                }
+                        key=lambda x: x["incoming"],
+                        reverse=True,
+                    )[:10]
 
                 return result
 
             except Exception as e:
                 return {"error": f"Audit failed: {e}"}
+
+        @mcp.tool()
+        async def sgraph_resolve_local_path(input: ResolveLocalPathInput):
+            """Map sgraph path to local filesystem path. Use to find source code for NuGet packages.
+
+            When to use:
+            - You found a class/method in sgraph and need to read its source code
+            - You want to understand what a NuGet package method does internally
+            - You need to navigate from dependency analysis to actual code
+
+            The mapping is configured in sgraph-mapping.json. Default maps:
+            - /Organization/<category>/<repo>/... -> /mnt/c/code/<repo>/...
+
+            Returns:
+            - sgraph_path: Original path
+            - repo_name: Git repository name (3rd level in hierarchy)
+            - local_path: Resolved filesystem path
+            - exists: Whether the file/dir exists locally
+
+            After resolving, use the Read tool to view the source code.
+            """
+            try:
+                result = _resolve_sgraph_path(input.sgraph_path)
+                return result
+            except Exception as e:
+                return {"error": f"Path resolution failed: {e}"}
