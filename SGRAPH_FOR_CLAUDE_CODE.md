@@ -14,11 +14,16 @@ SGraph provides **pre-computed dependency graphs** that answer architectural que
 ## Quick Start
 
 ```bash
-# Start the server with Claude Code profile (6 optimized tools)
+# Start the server with Claude Code profile (5 optimized tools)
 uv run python -m src.server --profile claude-code
+
+# With auto-loaded model and default scope
+uv run python -m src.server --profile claude-code \
+  --auto-load /path/to/model.xml.zip \
+  --default-scope /Project/repo
 ```
 
-Add to Claude Code's MCP config:
+Add to Claude Code's MCP config (`.mcp.json` in project root):
 ```json
 {
   "mcpServers": {
@@ -30,7 +35,7 @@ Add to Claude Code's MCP config:
 }
 ```
 
-## The 6 Tools
+## The 7 Tools
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
@@ -40,6 +45,11 @@ Add to Claude Code's MCP config:
 | `sgraph_get_element_structure` | Explore hierarchy | Instead of Read to see contents |
 | `sgraph_analyze_change_impact` | Impact analysis with warnings | Before any public interface change |
 | `sgraph_audit` | Architectural health checks | Tech debt reviews, onboarding |
+| `sgraph_resolve_local_path` | Map sgraph path to filesystem | When you need to read source code |
+
+## Output Format
+
+All tools return **JSON** — structured data that LLMs parse reliably regardless of nesting depth.
 
 ---
 
@@ -47,14 +57,14 @@ Add to Claude Code's MCP config:
 
 ### sgraph_load_model
 
-Load a graph model file. Required before using other tools.
+Load a graph model file. Required before using other tools (unless `--auto-load` is configured).
 
 ```python
 sgraph_load_model(path="/path/to/model.xml.zip")
-# Returns: {"model_id": "abc123..."}
+# Returns: {"model_id": "abc123...", "cached": true, "default_scope": "..."}
 ```
 
-**Note**: Save the `model_id` - you'll need it for all subsequent calls.
+If `--auto-load` is configured, the model loads at startup and `model_id` can be omitted from all other calls.
 
 ---
 
@@ -64,31 +74,33 @@ Find code elements by name pattern. **Use instead of grep for symbol lookup.**
 
 ```python
 # Find all Manager classes
-sgraph_search_elements(
-    model_id="...",
-    query=".*Manager",
-    element_types=["class"]
-)
+sgraph_search_elements(query="*Manager*", element_types=["class"])
 
-# Find functions starting with "validate" in auth module
+# Find files matching a pattern in a specific subtree
 sgraph_search_elements(
-    model_id="...",
-    query="^validate.*",
-    scope_path="/project/src/auth",
-    element_types=["function"]
+    query="*Service*",
+    scope_path="/Project/src/auth",
+    element_types=["file"]
 )
 ```
 
-**Output (TOON format)**:
-```
-/project/src/core/model_manager.py/ModelManager [class] ModelManager
-/project/src/auth/session_manager.py/SessionManager [class] SessionManager
+**Output:**
+```json
+{
+  "shown": 3, "total": 12,
+  "elements": [
+    {"path": "/project/src/core/model_manager.py/ModelManager", "type": "class", "name": "ModelManager"},
+    {"path": "/project/src/auth/session_manager.py/SessionManager", "type": "class", "name": "SessionManager"},
+    {"path": "/project/src/cache/cache_manager.py/CacheManager", "type": "class", "name": "CacheManager"}
+  ]
+}
 ```
 
-**When to use**:
-- You know a class/function name but not its location
-- Finding all implementations matching a pattern
-- Locating a symbol before querying its dependencies
+**Parameters:**
+- `query`: Wildcards (`*Service*`), regex (`.*Service.*`), or substring (`Service`)
+- `scope_path`: Limit search to subtree (uses server default scope if not set)
+- `element_types`: Filter by `["class", "function", "method", "file", "directory"]`
+- `max_results`: Limit results (default 50)
 
 ---
 
@@ -97,50 +109,65 @@ sgraph_search_elements(
 **THE KEY TOOL** - Query dependencies with abstraction level control.
 
 ```python
-# What functions call this function? (before changing signature)
+# What calls this function? (raw detail)
 sgraph_get_element_dependencies(
-    model_id="...",
     element_path="/project/src/auth/manager.py/AuthManager/validate",
-    direction="incoming",
-    result_level=None  # Raw function-level detail
+    direction="incoming"
 )
 
-# What FILES depend on this file? (planning file move)
+# What repos does this repo depend on?
 sgraph_get_element_dependencies(
-    model_id="...",
-    element_path="/project/src/auth/manager.py",
-    direction="incoming",
-    result_level=4  # Aggregated to file level
-)
-
-# What does this class use? (understanding implementation)
-sgraph_get_element_dependencies(
-    model_id="...",
-    element_path="/project/src/api/UserService",
-    direction="outgoing"
+    element_path="/project/src/myrepo",
+    direction="outgoing",
+    result_level=2,
+    include_descendants=True
 )
 ```
 
-**Direction explained**:
-- `"incoming"`: What **uses** this element (callers, importers) → impact analysis
-- `"outgoing"`: What this element **uses** (callees, imports) → understanding context
-- `"both"`: Both in one call
+**Output (element's own dependencies):**
+```json
+{
+  "outgoing": [
+    {"direction": "outgoing", "target": "/project/src/db/user_repo.py/UserRepo", "type": "call"},
+    {"direction": "outgoing", "target": "/project/src/crypto/service.py/hash", "type": "call"}
+  ],
+  "incoming": [
+    {"direction": "incoming", "source": "/project/src/api/endpoints.py/get_user", "type": "call"},
+    {"direction": "incoming", "source": "/project/src/api/endpoints.py/delete_user", "type": "call"},
+    {"direction": "incoming", "source": "/project/src/middleware/auth.py/check", "type": "call"}
+  ]
+}
+```
 
-**result_level explained** (THE KEY FEATURE):
-| Level | Meaning | Example |
-|-------|---------|---------|
+**Output (with `include_descendants=True`):**
+```json
+{
+  "outgoing": [
+    {"direction": "outgoing", "target": "/external/requests", "type": "import"},
+    {"direction": "outgoing", "target": "/project/src/db/user_repo.py/UserRepo", "type": "call", "from_descendant": "AuthManager/validate"},
+    {"direction": "outgoing", "target": "/project/src/crypto/service.py/hash", "type": "call", "from_descendant": "AuthManager/validate"},
+    {"direction": "outgoing", "target": "/project/src/cache/store.py/TokenStore", "type": "call", "from_descendant": "AuthManager/refresh"}
+  ]
+}
+```
+
+`from_descendant` / `to_descendant` fields identify which child element owns the dependency.
+
+**Parameters:**
+| Parameter | Description |
+|-----------|-------------|
+| `direction` | `"incoming"`, `"outgoing"`, or `"both"` |
+| `result_level` | Aggregate: `None`=raw, `4`=file, `3`=directory, `2`=repository |
+| `include_descendants` | `false` (default): only this element. `true`: include children recursively |
+| `include_external` | Include third-party dependencies (default `true`) |
+
+**result_level** controls abstraction - same data, different granularity:
+| Level | Meaning | Example: 41 raw deps becomes... |
+|-------|---------|--------------------------------|
 | `None` | Raw (as captured) | 41 individual function calls |
 | `4` | File level | 5 unique files |
 | `3` | Directory level | 2 unique directories |
 | `2` | Repository level | 2 unique repos |
-
-Same underlying data, different abstraction. One parameter changes the view.
-
-**Output (TOON format)**:
-```
-/project/src/api/endpoints.py/get_user -> /project/src/auth/manager.py/validate
-/project/src/middleware/auth.py/check -> /project/src/auth/manager.py/validate
-```
 
 ---
 
@@ -149,44 +176,37 @@ Same underlying data, different abstraction. One parameter changes the view.
 Explore what's inside a file, class, or directory **without reading source code**.
 
 ```python
-# What classes/functions are in this file?
-sgraph_get_element_structure(
-    model_id="...",
-    element_path="/project/src/core/model_manager.py",
-    max_depth=2
-)
-
 # What's in the services directory?
 sgraph_get_element_structure(
-    model_id="...",
     element_path="/project/src/services",
     max_depth=2
 )
 ```
 
-**Output**:
+**Output:**
 ```json
 {
-  "path": "/project/src/core/model_manager.py",
-  "type": "file",
-  "name": "model_manager.py",
+  "path": "/project/src/services", "type": "dir", "name": "services",
   "children": [
-    {
-      "path": ".../ModelManager",
-      "type": "class",
-      "name": "ModelManager",
-      "children": [
-        {"path": ".../load_model", "type": "method", "name": "load_model"},
-        {"path": ".../get_model", "type": "method", "name": "get_model"}
-      ]
-    }
+    {"path": "/project/src/services/auth_service.py", "type": "file", "name": "auth_service.py",
+     "children": [
+       {"path": "/project/src/services/auth_service.py/AuthService", "type": "class", "name": "AuthService"},
+       {"path": "/project/src/services/auth_service.py/validate_token", "type": "function", "name": "validate_token"}
+     ]},
+    {"path": "/project/src/services/user_service.py", "type": "file", "name": "user_service.py",
+     "children": [
+       {"path": "/project/src/services/user_service.py/UserService", "type": "class", "name": "UserService"}
+     ]}
   ]
 }
 ```
 
-**When to use**:
+**Parameters:**
+- `max_depth`: `1` = direct children only, `2` = two levels (usually sufficient), `3+` = deeper
+
+**When to use:**
 - Before deciding which file to Read (cheaper exploration)
-- Understanding class structure without source
+- Understanding class structure without reading source
 - Directory exploration without ls/find
 
 ---
@@ -197,49 +217,37 @@ sgraph_get_element_structure(
 
 ```python
 sgraph_analyze_change_impact(
-    model_id="...",
     element_path="/project/src/auth/manager.py/AuthManager/validate"
 )
 ```
 
-**Output**:
+**Output:**
 ```json
 {
-  "element": "/project/src/auth/manager.py/AuthManager/validate",
-  "element_type": "method",
-  "incoming_by_level": {
-    "detailed": [
-      "/project/src/api/endpoints.py/UserEndpoint/get_profile",
-      "/project/src/api/endpoints.py/AdminEndpoint/delete_user",
-      "/project/src/middleware/auth.py/require_auth"
-    ],
-    "file": ["/project/src/api/endpoints.py", "/project/src/middleware/auth.py"],
-    "module": ["/project/src/api", "/project/src/middleware"]
-  },
-  "summary": {
-    "incoming_count": 3,
-    "files_affected": 2,
-    "modules_affected": 2
-  },
+  "summary": {"callers": 3, "files": 2, "modules": 2},
   "warnings": [
-    {
-      "type": "dependency_cycle",
-      "message": "Bidirectional dependencies with 1 module(s) — blast radius likely exceeds listed callers",
-      "cycle_with": ["/project/src/middleware"]
-    }
-  ]
+    {"type": "dependency_cycle", "message": "Bidirectional deps with 1 module(s)...", "modules": ["/project/src/middleware"]},
+    {"type": "hub_element", "message": "42 outgoing deps — changes here cascade widely"}
+  ],
+  "detailed": [
+    "/project/src/api/endpoints.py/UserEndpoint/get_profile",
+    "/project/src/api/endpoints.py/AdminEndpoint/delete_user",
+    "/project/src/middleware/auth.py/require_auth"
+  ],
+  "by_file": ["/project/src/api/endpoints.py", "/project/src/middleware/auth.py"],
+  "by_module": ["/project/src/api", "/project/src/middleware"]
 }
 ```
 
-**Automatic warnings** (included only when detected):
-- **`dependency_cycle`**: The element's module has bidirectional dependencies with another module — changes may cascade in both directions, making the blast radius larger than the incoming count suggests.
-- **`hub_element`**: The element has >30 outgoing non-external dependencies — it's a high-coupling hub where changes tend to cascade widely.
+Warnings appear only when detected:
+- **dependency_cycle**: bidirectional module deps — changes may cascade in both directions
+- **hub_element**: >30 outgoing deps — high-coupling element
 
-**When to use**:
-- Before changing function signature → see all call sites
-- Before renaming class → see all importers
-- Before deleting code → verify nothing depends on it
-- Planning refactoring → understand blast radius
+**When to use:**
+- Before changing function signature -> see all call sites
+- Before renaming class -> see all importers
+- Before deleting code -> verify nothing depends on it
+- Planning refactoring -> understand blast radius
 
 ---
 
@@ -248,55 +256,43 @@ sgraph_analyze_change_impact(
 **Architectural health checks** — for occasional tech debt reviews, not daily use.
 
 ```python
-# Find all circular dependencies and hub modules
 sgraph_audit(
-    model_id="...",
-    scope_path="/project/src",        # Optional: limit scope
-    checks=["cycles", "hubs"],        # What to check
-    aggregation_level=3               # Module granularity
+    scope_path="/project/src",
+    checks=["cycles", "hubs"],
+    aggregation_level=3
 )
 ```
 
-**Output**:
+**Output:**
 ```json
 {
-  "scope": "/project/src",
-  "aggregation_level": 3,
-  "cycles": {
-    "count": 2,
-    "details": [
-      "/project/src/core <-> /project/src/api (12→, 5←)",
-      "/project/src/auth <-> /project/src/middleware (3→, 2←)"
-    ]
-  },
-  "hubs": {
-    "most_dependent": [
-      "/project/src/api (8 outgoing)",
-      "/project/src/core (6 outgoing)"
-    ],
-    "most_depended_upon": [
-      "/project/src/models (9 incoming)",
-      "/project/src/utils (7 incoming)"
-    ]
-  },
-  "summary": {
-    "total_modules": 12,
-    "total_dependencies": 45
-  }
+  "total_modules": 12, "total_dependencies": 45,
+  "cycles": [
+    {"module1": "/project/src/core", "module2": "/project/src/api", "forward": 12, "backward": 5},
+    {"module1": "/project/src/auth", "module2": "/project/src/middleware", "forward": 3, "backward": 2}
+  ],
+  "most_dependent": [
+    {"path": "/project/src/api", "outgoing": 8},
+    {"path": "/project/src/core", "outgoing": 6}
+  ],
+  "most_depended_upon": [
+    {"path": "/project/src/models", "incoming": 9},
+    {"path": "/project/src/utils", "incoming": 7}
+  ]
 }
 ```
 
-**aggregation_level controls granularity**:
+**aggregation_level** controls granularity:
 | Level | Meaning | Example |
 |-------|---------|---------|
 | `2` | Component level | `/project/component` (good for monorepos) |
 | `3` | Module level | `/project/component/module` (default) |
-| `4+` | Sub-module level | Deeper nesting for fine-grained analysis |
+| `4+` | Sub-module level | Deeper nesting |
 
-**When to use**:
-- Tech debt reviews → find circular dependencies
-- New developer onboarding → understand module coupling
-- Architecture audits → identify hub modules
+**When to use:**
+- Tech debt reviews -> find circular dependencies
+- New developer onboarding -> understand module coupling
+- Architecture audits -> identify hub modules
 - **Not** during regular feature development (use `analyze_change_impact` instead)
 
 ---
@@ -310,11 +306,11 @@ sgraph_audit(
 ```
 1. LOCATE the function:
    sgraph_search_elements(query="validate", scope_path="/project/src/auth")
-   → /project/src/auth/manager.py/AuthManager/validate
+   -> /project/src/auth/manager.py/AuthManager/validate [method] validate
 
 2. CHECK IMPACT before changing:
    sgraph_analyze_change_impact(element_path="...validate")
-   → 3 callers in 2 files
+   -> impact: 3 callers, 2 files, 1 modules
 
 3. PLAN changes:
    - Modify validate() signature
@@ -326,24 +322,30 @@ sgraph_audit(
 5. VERIFY: Run tests
 ```
 
-### Example 2: Understanding a New Codebase
+### Example 2: Understanding Cross-Repo Dependencies
 
-**Task**: Understand how authentication works
+**Task**: What external packages does this repo depend on?
 
 ```
-1. FIND auth-related classes:
-   sgraph_search_elements(query=".*[Aa]uth.*", element_types=["class"])
-   → AuthManager, AuthMiddleware, AuthConfig
+1. QUERY at repository level with descendants:
+   sgraph_get_element_dependencies(
+       element_path="/Project/repo",
+       direction="outgoing",
+       result_level=2,
+       include_descendants=True
+   )
+   -> outgoing (6):
+      -> /Project/External
+      -> /Project/OtherRepo
+      Repo/src/api.csproj -> /Project/Utilities
+      Repo/src/service.csproj -> /Project/SharedLib
+      ...
 
-2. EXPLORE structure of main class:
-   sgraph_get_element_structure(element_path=".../AuthManager", max_depth=2)
-   → Shows: validate(), refresh_token(), revoke() methods
-
-3. CHECK what AuthManager depends on:
-   sgraph_get_element_dependencies(element_path=".../AuthManager", direction="outgoing")
-   → Uses: TokenStore, UserRepository, CryptoService
-
-4. NOW read specific files with full context understanding
+2. DRILL DOWN into specific dependency:
+   sgraph_get_element_dependencies(
+       element_path="/Project/repo/src/service.csproj",
+       direction="outgoing"
+   )
 ```
 
 ### Example 3: Safe Refactoring
@@ -353,11 +355,14 @@ sgraph_audit(
 ```
 1. ANALYZE full impact:
    sgraph_analyze_change_impact(element_path=".../UserService")
-   → incoming_count: 15, files_affected: 8, modules_affected: 3
+   -> impact: 15 callers, 8 files, 3 modules
 
 2. GET detailed callers:
    sgraph_get_element_dependencies(element_path=".../UserService", direction="incoming")
-   → List of all 15 import sites
+   -> incoming (15):
+      /project/src/api/user_endpoint.py/get_user (call) ->
+      /project/src/api/admin.py/list_users (call) ->
+      ...
 
 3. PLAN: Update all 15 import statements after move
 
@@ -377,44 +382,15 @@ sgraph_audit(
 3. **Check impact before changes** - avoid "fix one, break three" cycles
 4. **Use structure instead of Read** for exploration - much cheaper
 5. **Start with high result_level**, drill down if needed
+6. **Use `include_descendants=True`** to see which child element causes each dependency
+7. **Widen `scope_path`** when searching for symbols in other repos (e.g., NuGet sources)
 
 ### Don't Do This
 
-1. ❌ Use grep for finding symbols (lossy, matches comments/strings)
-2. ❌ Read files to understand structure (token expensive)
-3. ❌ Modify code without checking incoming dependencies
-4. ❌ Make multiple calls when one tool returns all levels
-
----
-
-## Comparison: Without vs With SGraph
-
-### Without SGraph (Native Claude Code)
-
-```
-Claude: *wants to modify validate() signature*
-Claude: grep -r "validate" src/
-→ 247 matches (comments, strings, unrelated functions)
-Claude: *reads 10 files trying to find actual callers*
-Claude: *misses one caller in obscure file*
-Claude: *makes change*
-Tests: FAIL - missed caller breaks
-Claude: *reads error, finds missed file, fixes*
-Tests: FAIL - another missed caller
-... (repeat 5×, context saturated)
-```
-
-### With SGraph
-
-```
-Claude: *wants to modify validate() signature*
-Claude: sgraph_analyze_change_impact(element_path=".../validate")
-→ Exactly 3 callers in 2 files, with full paths
-Claude: *modifies validate() and all 3 call sites*
-Tests: PASS
-```
-
-**Result**: Proactive impact analysis replaces reactive error fixing.
+1. Don't use grep for finding symbols (lossy, matches comments/strings)
+2. Don't Read files to understand structure (token expensive)
+3. Don't modify code without checking incoming dependencies
+4. Don't make multiple calls when one tool returns all levels
 
 ---
 
@@ -423,29 +399,27 @@ Tests: PASS
 All paths in SGraph are hierarchical:
 
 ```
-/project-name/repository/src/directory/file.py/ClassName/method_name
+/Organization/Category/repository/src/directory/file.py/ClassName/method_name
 ```
 
 Examples:
-- File: `/myproject/backend/src/auth/manager.py`
-- Class: `/myproject/backend/src/auth/manager.py/AuthManager`
-- Method: `/myproject/backend/src/auth/manager.py/AuthManager/validate`
-- External: `/myproject/External/Python/requests`
+- Repository: `/Organization/Online/billing-service`
+- File: `/Organization/Online/repo/src/auth/manager.py`
+- Class: `/Organization/Online/repo/src/auth/manager.py/AuthManager`
+- External: `/Organization/External/Python/requests`
 
 Paths are **unambiguous** - no confusion about which `validate` you mean.
 
----
+## Scope and Default Scope
 
-## TOON Output Format
+The `--default-scope` CLI parameter limits searches to a subtree by default:
 
-Tools return **TOON (Token-Optimized Object Notation)** - 50-60% fewer tokens than JSON.
-
-```
-# JSON (~45 tokens)
-{"source":"src/api/endpoints.py/get_user","target":"src/auth/manager.py/validate","type":"call"}
-
-# TOON (~15 tokens)
-src/api/endpoints.py/get_user -> src/auth/manager.py/validate (call)
+```bash
+uv run python -m src.server --profile claude-code \
+  --default-scope /Organization/Online/my-repo
 ```
 
-Line-oriented format is easier to scan and cheaper to process.
+To search outside the default scope, pass `scope_path` explicitly:
+```python
+sgraph_search_elements(query="*UserService*", scope_path="/Organization")
+```
