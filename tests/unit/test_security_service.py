@@ -449,6 +449,34 @@ class TestScopePath:
         assert result['secrets']['total'] == 2
 
 
+class TestTopN:
+    """Tests for top_n limiting."""
+
+    def test_top_n_limits_secrets_repos(self):
+        g = SGraph()
+        for i in range(20):
+            repo = g.createOrGetElementFromPath(f'/Project/repo-{i:02d}')
+            repo.setType('repository')
+            s = g.createOrGetElementFromPath(f'/Project/repo-{i:02d}/f.py/potential_secret x{i}')
+            s.setType('potential_secret')
+            s.addAttribute('secret_type', 'test')
+
+        result = SecurityService.audit(g, top_n=5)
+        assert len(result['secrets']['top_repos']) == 5
+
+    def test_top_n_limits_risk_items(self):
+        g = SGraph()
+        for i in range(15):
+            d = g.createOrGetElementFromPath(f'/Project/repo/dir-{i:02d}')
+            d.setType('dir')
+            d.addAttribute('loc', '1000')
+            d.addAttribute('risk_density', str(float(i * 10)))
+            d.addAttribute('softagram_index', str(50))
+
+        result = SecurityService.audit(g, top_n=5)
+        assert len(result['risk']['high_risk_repos']) == 5
+
+
 class TestSummary:
     """Tests for the summary section."""
 
