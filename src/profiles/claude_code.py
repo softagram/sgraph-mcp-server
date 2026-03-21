@@ -8,6 +8,7 @@ Tools:
 - sgraph_get_element_structure: Hierarchy navigation (children)
 - sgraph_analyze_change_impact: Multi-level impact analysis (with cycle/hub warnings)
 - sgraph_audit: Architectural health checks (cycles, hubs) — for occasional reviews
+- sgraph_security_audit: Security overview (secrets, vulns, EOL, risk, backstage, bus factor)
 
 Design principles:
 - Paths as first-class citizens (unambiguous element identification)
@@ -25,6 +26,7 @@ from src.profiles.base import get_model_manager, register_load_model
 from src.services.search_service import SearchService
 from src.services.dependency_service import DependencyService
 from src.core.element_converter import ElementConverter
+from src.services.security_service import SecurityService
 
 
 # =============================================================================
@@ -200,6 +202,19 @@ class AuditInput(BaseModel):
 class ResolveLocalPathInput(BaseModel):
     """Input for sgraph_resolve_local_path - map sgraph paths to local filesystem."""
     sgraph_path: str = Field(description="Sgraph element path (e.g., /TalenomSoftware/Online/repo/file.cs)")
+
+
+class SecurityAuditInput(BaseModel):
+    """Input for sgraph_security_audit."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
+    scope_path: Optional[str] = Field(
+        default=None,
+        description="Limit audit to subtree (e.g., '/Project/Group/repo')"
+    )
+    top_n: int = Field(
+        default=10,
+        description="Maximum items in ranked lists (default 10)"
+    )
 
 
 # =============================================================================
@@ -659,3 +674,36 @@ class ClaudeCodeProfile:
                 return result
             except Exception as e:
                 return {"error": f"Path resolution failed: {e}"}
+
+        @mcp.tool()
+        async def sgraph_security_audit(input: SecurityAuditInput):
+            """Security overview across 6 dimensions: secrets, vulnerabilities,
+            outdated/EOL, risk levels, backstage metadata, bus factor.
+
+            Use for: organizational security posture, audit preparation, risk prioritization.
+
+            Dimensions (only those with findings are included):
+            - secrets: potential secrets committed to code (API keys, tokens, national IDs)
+            - vulnerabilities: CVEs in dependencies, by severity
+            - outdated: end-of-life frameworks and approaching-EOL packages
+            - risk: code risk density and Softagram Index (0-100, higher=better)
+            - backstage: service ownership, lifecycle, public exposure
+            - bus_factor: single-author critical files, low-author repositories
+
+            Returns JSON with summary + per-dimension breakdown.
+            """
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
+            if model is None:
+                return {"error": f"Model '{mid}' not found"}
+
+            try:
+                return SecurityService.audit(
+                    model,
+                    scope_path=input.scope_path,
+                    top_n=input.top_n,
+                )
+            except Exception as e:
+                return {"error": f"Security audit failed: {e}"}
