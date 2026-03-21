@@ -41,6 +41,25 @@ def _get_repo_path(element: SElement) -> str:
     return ancestor.getPath() if ancestor else 'unknown'
 
 
+# File extensions excluded from bus factor analysis (data/config, not source code)
+_NON_CODE_EXTENSIONS = frozenset({
+    'xml', 'json', 'yaml', 'yml', 'csv', 'tsv', 'txt', 'md', 'rst',
+    'html', 'htm', 'css', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'ico',
+    'woff', 'woff2', 'ttf', 'eot', 'map', 'lock', 'toml', 'ini', 'cfg',
+    'conf', 'properties', 'env',
+})
+
+
+def _is_code_file(element: SElement) -> bool:
+    """Check if a file element represents source code (not data/config)."""
+    name = element.name
+    dot_pos = name.rfind('.')
+    if dot_pos == -1:
+        return True  # no extension — treat as code
+    ext = name[dot_pos + 1:].lower()
+    return ext not in _NON_CODE_EXTENSIONS
+
+
 class SecurityService:
     """Provides security audit functionality across 6 dimensions."""
 
@@ -184,8 +203,8 @@ class SecurityService:
                     if exposed == 'true':
                         backstage_exposed.append(elem.name)
 
-            # Dim 6: Bus factor
-            if elem_type == 'file' and 'author_count_365' in elem.attrs:
+            # Dim 6: Bus factor (code files only, skip data/config)
+            if elem_type == 'file' and 'author_count_365' in elem.attrs and _is_code_file(elem):
                 ac = _safe_int(elem.attrs.get('author_count_365', '0'))
                 loc = _safe_int(elem.attrs.get('loc', '0'))
                 if ac <= 1 and loc > 500:

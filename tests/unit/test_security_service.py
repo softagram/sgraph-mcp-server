@@ -427,6 +427,40 @@ class TestBusFactorDetection:
         result = SecurityService.audit(model)
         assert 'bus_factor' in result['summary']['dimensions_found']
 
+    def test_non_code_files_excluded(self):
+        """XML, JSON and other data files should be excluded from bus factor."""
+        g = SGraph()
+        repo = g.createOrGetElementFromPath('/Project/repo')
+        repo.setType('repository')
+
+        # Large XML data file — should be EXCLUDED
+        xml_file = g.createOrGetElementFromPath('/Project/repo/data/materials.xml')
+        xml_file.setType('file')
+        xml_file.addAttribute('loc', '8000')
+        xml_file.addAttribute('author_count_365', '1')
+
+        # Large JSON data file — should be EXCLUDED
+        json_file = g.createOrGetElementFromPath('/Project/repo/data/products.json')
+        json_file.setType('file')
+        json_file.addAttribute('loc', '3000')
+        json_file.addAttribute('author_count_365', '1')
+
+        # Actual code file — should be INCLUDED
+        py_file = g.createOrGetElementFromPath('/Project/repo/src/main.py')
+        py_file.setType('file')
+        py_file.addAttribute('loc', '1000')
+        py_file.addAttribute('author_count_365', '1')
+
+        result = SecurityService.audit(g)
+        saf = result['bus_factor']['single_author_files']
+        assert len(saf) == 1
+        assert 'main.py' in saf[0]['path']
+
+        # Repo avg should only include the .py file
+        repos = result['bus_factor']['low_author_repos']
+        assert len(repos) == 1
+        assert repos[0]['total_loc'] == 1000
+
     def test_empty_model_no_bus_factor(self):
         model = _make_empty_model()
         result = SecurityService.audit(model)
