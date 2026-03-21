@@ -35,7 +35,7 @@ Add to Claude Code's MCP config (`.mcp.json` in project root):
 }
 ```
 
-## The 7 Tools
+## The 8 Tools
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
@@ -45,6 +45,7 @@ Add to Claude Code's MCP config (`.mcp.json` in project root):
 | `sgraph_get_element_structure` | Explore hierarchy | Instead of Read to see contents |
 | `sgraph_analyze_change_impact` | Impact analysis with warnings | Before any public interface change |
 | `sgraph_audit` | Architectural health checks | Tech debt reviews, onboarding |
+| `sgraph_security_audit` | Security overview (6 dimensions) | Security posture, audit prep, risk prioritization |
 | `sgraph_resolve_local_path` | Map sgraph path to filesystem | When you need to read source code |
 
 ## Output Format
@@ -297,9 +298,132 @@ sgraph_audit(
 
 ---
 
+### sgraph_security_audit
+
+**Security posture overview** across 6 dimensions in a single call. Works on any sgraph model — from a single repo to an organization with hundreds of repositories.
+
+```python
+# Full security audit
+sgraph_security_audit(top_n=10)
+
+# Scoped to a specific repository
+sgraph_security_audit(scope_path="/Organization/Platform/my-service", top_n=5)
+```
+
+**Output:**
+```json
+{
+  "summary": {
+    "total_repositories": 42,
+    "total_files": 85000,
+    "dimensions_found": ["secrets", "vulnerabilities", "outdated", "risk", "backstage", "bus_factor"]
+  },
+  "secrets": {
+    "total": 47,
+    "by_type": {"Hex High Entropy String": 30, "Base64 High Entropy String": 12, "unknown": 5},
+    "top_repos": [
+      {"repo": "/Organization/Platform/config-service", "count": 15},
+      {"repo": "/Organization/Platform/legacy-api", "count": 8}
+    ]
+  },
+  "vulnerabilities": {
+    "total": 25,
+    "by_severity": {"critical": 3, "high": 8, "moderate": 10, "low": 4},
+    "top_repos": []
+  },
+  "outdated": {
+    "total_eol": 5,
+    "total_approaching_eol": 3,
+    "items": [
+      {"path": "/Organization/External/DotNet/TFM/net5.0", "platform": "DotNet", "outdated": "fully", "end_of_life": "2022-05-10"}
+    ],
+    "frameworks_deprecated": [
+      {"path": "/Organization/External/DotNet/TFM/net5.0/net5.0 is deprecated", "description": "net5.0 reached end of life"}
+    ]
+  },
+  "risk": {
+    "high_risk_repos": [
+      {"path": "/Organization/Platform/legacy-api", "risk_density": 450.2, "softagram_index": 23, "architecture_modularity": 31, "loc": 45000}
+    ],
+    "avg_softagram_index": 62.5,
+    "distribution": {"0-25": 2, "25-50": 8, "50-75": 20, "75-100": 12}
+  },
+  "backstage": {
+    "services_found": 15,
+    "by_lifecycle": {"production": 10, "deprecated": 3, "experimental": 2},
+    "exposed_to_public": ["public-api", "web-frontend"],
+    "owners": {"team-platform": 8, "team-core": 5, "team-data": 2}
+  },
+  "bus_factor": {
+    "single_author_files": [
+      {"path": "/Organization/Platform/billing/src/invoice_engine.py", "loc": 3200, "author_count_365": 1}
+    ],
+    "low_author_repos": [
+      {"path": "/Organization/Platform/legacy-api", "total_loc": 45000, "avg_author_count": 1.1}
+    ]
+  }
+}
+```
+
+**The 6 dimensions:**
+
+| Dimension | What it finds | Key insight |
+|-----------|--------------|-------------|
+| **secrets** | API keys, tokens, national IDs committed to code | "Where are leaked credentials?" |
+| **vulnerabilities** | Known CVEs in dependencies, by severity | "How many critical vulns exist?" |
+| **outdated** | End-of-life frameworks, approaching-EOL packages | "What needs upgrading before it becomes a risk?" |
+| **risk** | Code quality metrics (Softagram Index 0-100) | "Which repos have the worst code quality?" |
+| **backstage** | Service catalog: owners, lifecycle, public exposure | "Who owns what? What's exposed to the internet?" |
+| **bus_factor** | Single-author critical files, low-author repos | "What breaks if someone leaves the team?" |
+
+**Notes:**
+- Non-code files (XML, JSON, YAML, etc.) are excluded from bus factor analysis
+- Dimensions with no data return empty/zero values (not errors)
+- `top_n` limits all ranked lists (default 10)
+- Softagram Index: 0 = disaster, 100 = excellent (combination of risk density and architecture modularity)
+
+**When to use:**
+- Organizational security audit — "What's the security posture across all our repos?"
+- Risk prioritization — "Which repos need attention first?"
+- Compliance preparation — "Show me all EOL frameworks"
+- Team review — "Which critical code has only one author?"
+
+---
+
 ## Workflow Examples
 
-### Example 1: Modifying a Function Signature
+### Example 1: Security Audit of an Organization
+
+**Task**: Assess security posture across all repositories
+
+```
+1. LOAD the organization model:
+   sgraph_load_model(path="/path/to/org-model.xml.zip")
+   -> model_id: "abc123"
+
+2. RUN full security audit:
+   sgraph_security_audit(model_id="abc123", top_n=10)
+   -> summary: 3 critical vulns, 47 secrets, 5 EOL frameworks, 2 bus factor risks
+
+3. PRIORITIZE by severity:
+   - Fix 3 critical vulnerabilities immediately
+   - Rotate 47 leaked secrets
+   - Plan migration for 5 EOL frameworks
+   - Address bus factor in billing/invoice_engine.py (3200 LOC, 1 author)
+
+4. DRILL DOWN into specific repo:
+   sgraph_security_audit(model_id="abc123", scope_path="/Organization/Platform/legacy-api")
+   -> Detailed view of just that repo's security issues
+
+5. CHECK what depends on the vulnerable library:
+   sgraph_get_element_dependencies(
+       element_path="/Organization/External/NPM/lodash of version 4.17.0",
+       direction="incoming", result_level=2
+   )
+   -> Shows which repos import the vulnerable version
+```
+
+### Example 2: Modifying a Function Signature
 
 **Task**: Change `validate(token)` to `validate(token, strict=False)`
 
@@ -403,10 +527,10 @@ All paths in SGraph are hierarchical:
 ```
 
 Examples:
-- Repository: `/TalenomSoftware/Online/talenom.online.invoicepayment5.api`
-- File: `/TalenomSoftware/Online/repo/src/auth/manager.py`
-- Class: `/TalenomSoftware/Online/repo/src/auth/manager.py/AuthManager`
-- External: `/TalenomSoftware/External/Python/requests`
+- Repository: `/Organization/Platform/billing-service`
+- File: `/Organization/Online/repo/src/auth/manager.py`
+- Class: `/Organization/Online/repo/src/auth/manager.py/AuthManager`
+- External: `/Organization/External/Python/requests`
 
 Paths are **unambiguous** - no confusion about which `validate` you mean.
 
@@ -416,10 +540,10 @@ The `--default-scope` CLI parameter limits searches to a subtree by default:
 
 ```bash
 uv run python -m src.server --profile claude-code \
-  --default-scope /TalenomSoftware/Online/my-repo
+  --default-scope /Organization/Online/my-repo
 ```
 
 To search outside the default scope, pass `scope_path` explicitly:
 ```python
-sgraph_search_elements(query="*CompanyIdentity*", scope_path="/TalenomSoftware")
+sgraph_search_elements(query="*UserService*", scope_path="/Organization")
 ```

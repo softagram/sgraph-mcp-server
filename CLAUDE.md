@@ -16,8 +16,12 @@ uv sync
 uv run python -m src.server
 
 # Run with specific profile
-uv run python -m src.server --profile claude-code  # 6 optimized tools
+uv run python -m src.server --profile claude-code  # 8 optimized tools
 uv run python -m src.server --profile legacy       # 14 tools (default)
+
+# Run security audit CLI
+uv run python -m src.tools.security_report_cli /path/to/model.xml.zip
+uv run python -m src.tools.security_report_cli /path/to/model.xml.zip -o report.md --top-n 20
 
 # Run all tests
 uv run python tests/run_all_tests.py
@@ -43,7 +47,7 @@ MCP Client Request
        ↓
 [Tools Layer] src/tools/        → MCP tool definitions, input validation
        ↓
-[Services Layer] src/services/  → Business logic (search, dependencies, overview)
+[Services Layer] src/services/  → Business logic (search, dependencies, overview, security audit)
        ↓
 [Core Layer] src/core/          → Model management, data conversion
        ↓

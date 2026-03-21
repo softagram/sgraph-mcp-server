@@ -30,6 +30,7 @@ The sgraph-mcp-server uses a **modular architecture** designed for maintainabili
    - **SearchService** - Search algorithms (by name, type, attributes)
    - **DependencyService** - Dependency analysis and subtree operations
    - **OverviewService** - Model structure overview generation
+   - **SecurityService** - Security audit across 6 dimensions (secrets, vulns, EOL, risk, backstage, bus factor)
 
 3. **Tools Layer** (`src/tools/`)
    - **ModelTools** - Model loading and overview MCP tools

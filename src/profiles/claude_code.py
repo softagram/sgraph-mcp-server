@@ -13,7 +13,7 @@ Tools:
 Design principles:
 - Paths as first-class citizens (unambiguous element identification)
 - Abstraction as query parameter (result_level: function/file/module)
-- Progressive disclosure (7 tools vs 13+)
+- Progressive disclosure (8 tools vs 13+)
 - JSON output for reliable parsing by LLMs
 """
 
