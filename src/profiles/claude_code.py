@@ -67,7 +67,7 @@ def _collect_deps(element, base_path: str, direction: str, result_level, include
         if direction in ("outgoing", "both"):
             for assoc in elem.outgoing:
                 target = aggregate(assoc.toElement.getPath())
-                dep_type = getattr(assoc, 'type', '')
+                dep_type = getattr(assoc, 'deptype', '')
                 key = ("out", relative, target, dep_type)
                 if key not in seen:
                     seen.add(key)
@@ -81,7 +81,7 @@ def _collect_deps(element, base_path: str, direction: str, result_level, include
         if direction in ("incoming", "both"):
             for assoc in elem.incoming:
                 source = aggregate(assoc.fromElement.getPath())
-                dep_type = getattr(assoc, 'type', '')
+                dep_type = getattr(assoc, 'deptype', '')
                 key = ("in", source, relative, dep_type)
                 if key not in seen:
                     seen.add(key)
