@@ -6,6 +6,7 @@ Tools:
 - sgraph_search_elements: Find elements by name within scope
 - sgraph_get_element_dependencies: Dependencies with result_level abstraction
 - sgraph_get_element_structure: Hierarchy navigation (children)
+- sgraph_get_element_attributes: Element metadata/attributes (quality metrics, ownership, etc.)
 - sgraph_analyze_change_impact: Multi-level impact analysis (with cycle/hub warnings)
 - sgraph_audit: Architectural health checks (cycles, hubs) — for occasional reviews
 - sgraph_security_audit: Security overview (secrets, vulns, EOL, risk, backstage, bus factor)
@@ -197,6 +198,12 @@ class AuditInput(BaseModel):
         default=3,
         description="Directory depth for module grouping (3='/project/component/module')"
     )
+
+
+class GetElementAttributesInput(BaseModel):
+    """Input for sgraph_get_element_attributes."""
+    model_id: Optional[str] = Field(default=None, description="Model ID (omit to use auto-loaded default)")
+    element_path: str = Field(description="Full hierarchical path to element")
 
 
 class ResolveLocalPathInput(BaseModel):
@@ -648,6 +655,43 @@ class ClaudeCodeProfile:
 
             except Exception as e:
                 return {"error": f"Audit failed: {e}"}
+
+        @mcp.tool()
+        async def sgraph_get_element_attributes(input: GetElementAttributesInput):
+            """Get all attributes (metadata) of a code element.
+
+            When to use:
+            - Check quality metrics (loc, risk_density, softagram_index)
+            - Check ownership info (backstage metadata, author counts)
+            - See security markers (secret_type, severity, outdated)
+            - Inspect any element metadata before deeper analysis
+
+            Returns element info + all attributes as flat key-value pairs.
+            Only attributes that exist on the element are included.
+            """
+            mid = input.model_id or model_manager.default_model_id
+            if not mid:
+                return {"error": "No model loaded. Call sgraph_load_model first."}
+            model = model_manager.get_model(mid)
+            if model is None:
+                return {"error": f"Model '{mid}' not found"}
+
+            element = model.findElementFromPath(input.element_path)
+            if element is None:
+                return {"error": f"Element not found: {input.element_path}"}
+
+            try:
+                result = {
+                    "type": element.getType() or "element",
+                    "name": element.name,
+                }
+                if element.attrs:
+                    result["attributes"] = dict(element.attrs)
+                else:
+                    result["attributes"] = {}
+                return result
+            except Exception as e:
+                return {"error": f"Attribute query failed: {e}"}
 
         @mcp.tool()
         async def sgraph_resolve_local_path(input: ResolveLocalPathInput):
