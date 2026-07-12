@@ -32,7 +32,7 @@ dependencies = [
     "mcp[cli]>=1.9.0",
     "nanoid>=2.0.0",
     "pydantic>=2.11.4",
-    "sgraph>=1.4.0",
+    "sgraph>=1.6.1",
     "spycy-aneeshdurg>=0.0.3",
 ]
 

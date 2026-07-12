@@ -27,7 +27,7 @@ async def test_all_search_functions_performance():
     helper = SGraphHelper()
     
     # Path to the test model
-    model_path = Path(__file__).parent.parent / "sgraph-example-models" / "langchain.xml.zip"
+    model_path = Path(__file__).parent.parent.parent / "sgraph-example-models" / "langchain.xml.zip"
     
     if not model_path.exists():
         print(f"❌ Test model not found at: {model_path}")
