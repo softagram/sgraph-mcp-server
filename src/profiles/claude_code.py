@@ -386,9 +386,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with match count and element list.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -458,9 +458,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with outgoing/incoming dependency lists.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -512,9 +512,9 @@ class ClaudeCodeProfile:
             Returns JSON hierarchy with path, type, name, and children.
             Much cheaper than Read - use this first to decide what to read.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -549,9 +549,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with summary, warnings, and callers at multiple aggregation levels.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -653,9 +653,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with cycles, hub modules, and summary metrics.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -729,9 +729,9 @@ class ClaudeCodeProfile:
             Returns element info + all attributes as flat key-value pairs.
             Only attributes that exist on the element are included.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -796,9 +796,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with summary + per-dimension breakdown.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -870,9 +870,9 @@ class ClaudeCodeProfile:
 
             Returns JSON array of result rows. Read-only: CREATE/DELETE/SET not supported.
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}
@@ -970,9 +970,9 @@ class ClaudeCodeProfile:
 
             Returns JSON with elements (path, type, name) and associations (from, to, type).
             """
-            mid = input.model_id or model_manager.default_model_id
+            mid = input.model_id or await model_manager.ensure_default_model()
             if not mid:
-                return {"error": "No model loaded. Call sgraph_load_model first."}
+                return {"error": model_manager.no_model_error()}
             model = model_manager.get_model(mid)
             if model is None:
                 return {"error": f"Model '{mid}' not found"}

@@ -38,11 +38,13 @@ def register_load_model(mcp: FastMCP) -> None:
         try:
             model_manager = get_model_manager()
 
-            # Return existing default model if already loaded
-            if model_manager.default_model_id:
+            # Prefer the model configured at startup, parsing it if still deferred.
+            already_loaded = model_manager.default_model_id is not None
+            default_model_id = await model_manager.ensure_default_model()
+            if default_model_id:
                 return {
-                    "model_id": model_manager.default_model_id,
-                    "cached": True,
+                    "model_id": default_model_id,
+                    "cached": already_loaded,
                     "default_scope": model_manager.default_scope,
                 }
 

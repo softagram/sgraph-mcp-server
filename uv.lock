@@ -847,16 +847,16 @@ wheels = [
 
 [[package]]
 name = "sgraph"
-version = "1.6.1"
+version = "1.19.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "levenshtein" },
     { name = "lxml" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/87/906dec925bdd88d6dcfa4a4c47d0750ea9c64c68caf27c6a181f03dd05d3/sgraph-1.6.1.tar.gz", hash = "sha256:b5312fb62e775c4fbf48b00542b168498e3019f452dac7c13d9c34acc9d8629d", size = 104400 }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/cf/c35c584c7f2ba865a9378bc48a144f4ed8f90a86261b91980a3b7fc1016e/sgraph-1.19.0.tar.gz", hash = "sha256:bc1d25c8a21f73ed6456503104f5f5196e55491c56b05c6980286ba907244a99", size = 159591 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/65/c24d850d06534c52a5b7918f1667b5ef4c83e3d7d9ac03716dcc7d996c32/sgraph-1.6.1-py3-none-any.whl", hash = "sha256:8b48b687c9bab02790ff072c54029366432abe2a071c8dec9e0f99663903fdff", size = 116130 },
+    { url = "https://files.pythonhosted.org/packages/57/cc/dd7bd196b52247a69fa6391e20c72228ea3dd35eabcab3c83ac14c012281/sgraph-1.19.0-py3-none-any.whl", hash = "sha256:5bbc0756b4270d15d0cb1c3932bd97fddf1ac426b0843de74d1a2efc9f8f955d", size = 166555 },
 ]
 
 [[package]]
@@ -885,7 +885,7 @@ requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=1.9.0" },
     { name = "nanoid", specifier = ">=2.0.0" },
     { name = "pydantic", specifier = ">=2.11.4" },
-    { name = "sgraph", specifier = ">=1.6.1" },
+    { name = "sgraph", specifier = ">=1.19.0" },
     { name = "spycy-aneeshdurg", specifier = ">=0.0.3" },
 ]
 

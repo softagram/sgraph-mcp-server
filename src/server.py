@@ -60,7 +60,9 @@ Examples:
         "--auto-load",
         type=str,
         default=None,
-        help="Path to model file to load automatically at startup",
+        help="Path to a model file to use without an explicit sgraph_load_model call. "
+             "Registered at startup, parsed on the first tool call that needs it. "
+             "Only the claude-code profile consults it.",
     )
     parser.add_argument(
         "--default-scope",
@@ -96,23 +98,22 @@ def main():
         print(f"❌ Error: {e}", file=log)
         return 1
 
-    # Auto-load model in background thread (to avoid blocking MCP protocol startup)
+    # Register the model without reading it. The first tool call triggers the parse,
+    # so a session that never queries sgraph costs nothing beyond an idle process.
     if args.auto_load:
-        import threading
-        def _bg_load():
-            print(f"📂 Auto-loading model (background): {args.auto_load}", file=log, flush=True)
-            try:
-                from src.profiles.base import get_model_manager
-                mm = get_model_manager()
-                if args.default_scope:
-                    mm.default_scope = args.default_scope
-                model_id = mm.load_model_sync(args.auto_load)
-                print(f"✅ Model ready: {model_id}", file=log, flush=True)
-                if args.default_scope:
-                    print(f"🔍 Default scope: {args.default_scope}", file=log, flush=True)
-            except Exception as e:
-                print(f"⚠️ Auto-load failed: {e}", file=log, flush=True)
-        threading.Thread(target=_bg_load, daemon=True).start()
+        from src.profiles.base import get_model_manager
+        get_model_manager().set_deferred_model(args.auto_load, args.default_scope)
+        print(f"📂 Model registered, loads on first use: {args.auto_load}", file=log, flush=True)
+        if args.profile != "claude-code":
+            # The legacy tools hold their own ModelManager (src/tools/model_tools.py),
+            # so they will never see this one. Say so rather than imply it is armed.
+            print(
+                f"⚠️ Profile '{args.profile}' ignores --auto-load; "
+                "callers must pass model_id from sgraph_load_model",
+                file=log, flush=True,
+            )
+        if args.default_scope:
+            print(f"🔍 Default scope: {args.default_scope}", file=log, flush=True)
 
     # Start the server
     if args.transport == "sse":

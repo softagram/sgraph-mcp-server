@@ -36,7 +36,7 @@ uv sync
 # With Claude Code profile (recommended)
 uv run python -m src.server --profile claude-code
 
-# With auto-loaded model (skip the load_model step)
+# With a startup model (skip the load_model step; parsed on first use, not at startup)
 uv run python -m src.server --profile claude-code \
   --auto-load /path/to/model.xml.zip \
   --default-scope /Project/src

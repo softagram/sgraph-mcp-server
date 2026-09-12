@@ -13,7 +13,7 @@ SGraph provides **pre-computed dependency graphs** that answer architectural que
 
 ## Quick Start
 
-The recommended setup is **stdio transport launched directly by Claude Code** — no background server to manage, no port conflicts, and each Claude Code session gets its own instance with an auto-loaded model.
+The recommended setup is **stdio transport launched directly by Claude Code** — no background server to manage, no port conflicts, and each Claude Code session gets its own instance, which picks up the configured model on first use.
 
 Add this to your `.mcp.json` in the project root:
 ```json
@@ -34,7 +34,12 @@ Add this to your `.mcp.json` in the project root:
 }
 ```
 
-Claude Code spawns the server over stdio on first tool call. No separate `uv run` needed.
+Claude Code spawns the server over stdio when the session starts. No separate `uv run` needed.
+
+`--auto-load` only *registers* the model; it is parsed on the first tool call that needs it, not at
+startup. A session that never queries sgraph therefore costs an idle process (~120 MB) rather than a
+parsed model (a 112 MB model measured at ~635 MB of heap). The trade is that the first sgraph call in
+a session pays the parse — about 7 s for that model — and every call after it is served from memory.
 
 <details>
 <summary>Alternative: run the server manually (SSE transport)</summary>
@@ -80,14 +85,15 @@ All tools return **JSON** — structured data that LLMs parse reliably regardles
 
 ### sgraph_load_model
 
-Load a graph model file. Required before using other tools (unless `--auto-load` is configured).
+Load a graph model file. Required before using other tools (unless `--auto-load` is configured, in
+which case every tool loads it on demand and calling this is optional).
 
 ```python
 sgraph_load_model(path="/path/to/model.xml.zip")
 # Returns: {"model_id": "abc123...", "cached": true, "default_scope": "..."}
 ```
 
-If `--auto-load` is configured, the model loads at startup and `model_id` can be omitted from all other calls.
+If `--auto-load` is configured, `model_id` can be omitted from all other calls; the first such call parses the model.
 
 ---
 
