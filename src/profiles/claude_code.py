@@ -878,6 +878,16 @@ class ClaudeCodeProfile:
                 return {"error": f"Model '{mid}' not found"}
 
             try:
+                # NumPy 2.0 removed np.float_, which spycy <= 0.0.3 still
+                # references (toInteger/toFloat/toString crash without this).
+                # Same alias as np.float64 on NumPy 1.x, so a no-op there.
+                # Remove once sgraph ships its own shim (softagram/sgraph#191)
+                # or a spycy release containing aneeshdurg/spycy#3 is required.
+                import numpy as np
+
+                if not hasattr(np, "float_"):
+                    np.float_ = np.float64  # type: ignore[attr-defined]
+
                 from sgraph.cypher import SGraphCypherBackend, SGraphCypherExecutor
                 import pandas as pd
 
