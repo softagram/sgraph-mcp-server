@@ -168,7 +168,14 @@ class ModelManager:
             self._models[model_id] = model
             self._model_paths[model_id] = os.path.abspath(path)
             logger.info(f"💾 Model cached in memory (total models: {len(self._models)})")
-            
+
+            # The first model loaded on request becomes the default, so query
+            # tools work without repeating its ID. A configured startup model
+            # keeps that role even while it is still unparsed.
+            if self._default_model_id is None and self._deferred_path is None:
+                self._default_model_id = model_id
+                logger.info(f"🆔 Model ID: {model_id} (set as default)")
+
             # Log basic model info
             if hasattr(model, 'rootNode') and model.rootNode:
                 logger.info(f"🌳 Model root: {model.rootNode.name if model.rootNode.name else 'unnamed'}")
@@ -216,6 +223,22 @@ class ModelManager:
         logger.info(f"🆔 Model ID: {model_id} (set as default)")
 
         return model_id
+
+    def is_default_path(self, path: str) -> bool:
+        """Whether `path` names the default model, whether loaded or still deferred.
+
+        Paths are compared after resolving symlinks, so `latest.xml.zip` matches
+        the analysis it points to.
+        """
+        candidates = [self._deferred_path]
+        if self._default_model_id is not None:
+            candidates.append(self._model_paths.get(self._default_model_id))
+        target = os.path.realpath(os.path.expanduser(path))
+        return any(
+            candidate is not None
+            and os.path.realpath(os.path.expanduser(candidate)) == target
+            for candidate in candidates
+        )
 
     @property
     def default_model_id(self) -> Optional[str]:

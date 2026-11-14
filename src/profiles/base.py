@@ -34,19 +34,23 @@ def register_load_model(mcp: FastMCP) -> None:
     @mcp.tool()
     async def sgraph_load_model(input: LoadModelInput):
         """Load a graph model from file and return its ID for subsequent queries.
-        If the model was already auto-loaded at startup, returns the existing ID instantly."""
+        The first model loaded becomes the default, so later tools may omit model_id.
+        Asking again for the default model's path returns the existing ID instantly."""
         try:
             model_manager = get_model_manager()
 
-            # Prefer the model configured at startup, parsing it if still deferred.
-            already_loaded = model_manager.default_model_id is not None
-            default_model_id = await model_manager.ensure_default_model()
-            if default_model_id:
-                return {
-                    "model_id": default_model_id,
-                    "cached": already_loaded,
-                    "default_scope": model_manager.default_scope,
-                }
+            # Answer from the default model (the startup model, parsed now if still
+            # deferred) only when it is the one asked for; any other path is
+            # loaded as a model of its own.
+            if model_manager.is_default_path(input.path):
+                already_loaded = model_manager.default_model_id is not None
+                default_model_id = await model_manager.ensure_default_model()
+                if default_model_id:
+                    return {
+                        "model_id": default_model_id,
+                        "cached": already_loaded,
+                        "default_scope": model_manager.default_scope,
+                    }
 
             is_valid, error = validate_path(input.path, must_exist=True)
             if not is_valid:
